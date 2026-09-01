@@ -14,7 +14,9 @@ PIECE_VALUE = {
 }
 
 MATE = 1_000_000
-SEARCH_DEPTH = 2
+SEARCH_DEPTH = 4
+
+NODES = 0
 
 
 def evaluate(board):
@@ -30,7 +32,15 @@ def evaluate(board):
     return score
 
 def negamax(board, depth, alpha, beta):
+    global NODES
+    NODES += 1
+
     moves = list(board.legal_moves)
+
+    moves.sort(
+        key=lambda move: board.is_capture(move),
+        reverse=True,
+    )
 
     # No legal moves means checkmate or stalemate.
     if not moves:
@@ -66,6 +76,9 @@ def negamax(board, depth, alpha, beta):
 
 
 def get_move(fen: str, time_left_ms: int) -> str:
+    global NODES
+    NODES = 0 
+
     board = chess.Board(fen)
 
     best_move = None
@@ -91,5 +104,6 @@ def get_move(fen: str, time_left_ms: int) -> str:
             best_move = move
 
         alpha = max(alpha, score)
-
+    
+    print(f"nodes: {NODES}")
     return best_move.uci()
