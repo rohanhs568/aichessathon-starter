@@ -4,3 +4,9 @@ __pycache__/
 .ruff_cache/
 submission.zip
 *.pgn
+
+
+training/data/raw/
+training/data/*.csv
+training/data/*.parquet
+training/data/*.zst
