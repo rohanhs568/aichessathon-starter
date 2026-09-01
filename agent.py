@@ -6,6 +6,10 @@ import chess
 import chess.polyglot
 
 
+# ============================================================
+# CONSTANTS
+# ============================================================
+
 PIECE_VALUE = {
     chess.PAWN: 100,
     chess.KNIGHT: 320,
@@ -17,14 +21,24 @@ PIECE_VALUE = {
 MATE = 1_000_000
 INF = float("inf")
 
-# Transposition-table entry types.
 EXACT = 0
 LOWER = 1
 UPPER = 2
 
-# Persists between moves during one game.
-TT = {}
 MAX_TT_SIZE = 250_000
+
+
+# ============================================================
+# GLOBAL SEARCH STATE
+# ============================================================
+
+TT = {}
+
+# Two killer moves for each ply.
+KILLERS = {}
+
+# (piece_type, from_square, to_square) -> score
+HISTORY = {}
 
 NODES = 0
 DEADLINE = 0.0
@@ -34,8 +48,16 @@ class SearchTimeout(Exception):
     pass
 
 
+# ============================================================
+# EVALUATION
+# ============================================================
+
 def evaluate(board):
-    """Material evaluation from the side-to-move perspective."""
+    """
+    Material-only evaluation from the perspective
+    of the side to move.
+    """
+
     side = board.turn
     score = 0
 
@@ -48,83 +70,323 @@ def evaluate(board):
     return score
 
 
-def position_key(board):
-    """
-    Hash the board for the transposition table.
+# ============================================================
+# TRANSPOSITION TABLE
+# ============================================================
 
-    Include halfmove_clock because positions with identical pieces
-    can differ with respect to the fifty-move rule.
-    """
+def position_key(board):
     return (
         chess.polyglot.zobrist_hash(board),
         board.halfmove_clock,
     )
 
 
-def move_order_score(board, move, tt_move):
-    """
-    Larger score = search this move earlier.
+# ============================================================
+# TIME MANAGEMENT
+# ============================================================
 
-    Priority:
-        1. previous TT best move
-        2. promotions
-        3. captures, especially valuable victim / cheap attacker
-        4. quiet moves
+def check_time():
+    """
+    Checking the system clock itself has a cost,
+    so only check periodically.
     """
 
+    if NODES % 1024 == 0:
+        if time.monotonic() >= DEADLINE:
+            raise SearchTimeout
+
+
+def choose_time_budget(time_left_ms):
+    """
+    Simple conservative clock management.
+    """
+
+    if time_left_ms <= 500:
+        return max(10.0, 0.20 * time_left_ms)
+
+    budget_ms = 0.03 * time_left_ms + 350
+
+    budget_ms = min(budget_ms, 3000)
+
+    budget_ms = min(
+        budget_ms,
+        max(50, time_left_ms - 500),
+    )
+
+    return budget_ms
+
+
+# ============================================================
+# MOVE ORDERING
+# ============================================================
+
+def move_order_score(board, move, tt_move, ply):
+    """
+    Larger score = search earlier.
+
+    Priority roughly:
+
+        TT move
+        promotions
+        captures
+        killer moves
+        history heuristic
+        other quiet moves
+    """
+
+    # Best move remembered from an earlier search.
     if tt_move is not None and move == tt_move:
-        return 10_000_000
+        return 100_000_000
 
     score = 0
 
+    # --------------------------------------------------------
+    # Promotions
+    # --------------------------------------------------------
+
     if move.promotion is not None:
-        score += 1_000_000
+        score += 10_000_000
         score += PIECE_VALUE.get(move.promotion, 0)
 
+    # --------------------------------------------------------
+    # Captures: MVV-LVA
+    # --------------------------------------------------------
+
     if board.is_capture(move):
+
         if board.is_en_passant(move):
             victim_value = PIECE_VALUE[chess.PAWN]
+
         else:
             victim = board.piece_at(move.to_square)
-            victim_value = (
-                PIECE_VALUE.get(victim.piece_type, 0)
-                if victim is not None
-                else 0
-            )
+
+            if victim is None:
+                victim_value = 0
+            else:
+                victim_value = PIECE_VALUE.get(
+                    victim.piece_type,
+                    0,
+                )
 
         attacker = board.piece_at(move.from_square)
-        attacker_value = (
-            PIECE_VALUE.get(attacker.piece_type, 0)
-            if attacker is not None
-            else 0
+
+        if attacker is None:
+            attacker_value = 0
+        else:
+            attacker_value = PIECE_VALUE.get(
+                attacker.piece_type,
+                0,
+            )
+
+        score += 1_000_000
+        score += 10 * victim_value - attacker_value
+
+        return score
+
+    # --------------------------------------------------------
+    # Killer moves
+    # --------------------------------------------------------
+
+    killers = KILLERS.get(ply, [])
+
+    if len(killers) > 0 and move == killers[0]:
+        score += 900_000
+
+    elif len(killers) > 1 and move == killers[1]:
+        score += 800_000
+
+    # --------------------------------------------------------
+    # History heuristic
+    # --------------------------------------------------------
+
+    piece = board.piece_at(move.from_square)
+
+    if piece is not None:
+        key = (
+            piece.piece_type,
+            move.from_square,
+            move.to_square,
         )
 
-        # MVV-LVA:
-        # Most Valuable Victim, Least Valuable Attacker.
-        score += 100_000
-        score += 10 * victim_value - attacker_value
+        score += HISTORY.get(key, 0)
 
     return score
 
 
-def ordered_moves(board, tt_move=None):
+def ordered_moves(board, tt_move=None, ply=0):
     moves = list(board.legal_moves)
 
     moves.sort(
-        key=lambda move: move_order_score(board, move, tt_move),
+        key=lambda move: move_order_score(
+            board,
+            move,
+            tt_move,
+            ply,
+        ),
         reverse=True,
     )
 
     return moves
 
 
-def check_time():
-    """
-    Avoid calling the clock at every node because that itself costs time.
-    """
-    if NODES % 1024 == 0 and time.monotonic() >= DEADLINE:
-        raise SearchTimeout
+# ============================================================
+# KILLER + HISTORY UPDATES
+# ============================================================
 
+def record_quiet_cutoff(board, move, depth, ply):
+    """
+    A quiet move produced a beta cutoff.
+
+    Remember it as a useful move-ordering candidate.
+    """
+
+    if board.is_capture(move):
+        return
+
+    if move.promotion is not None:
+        return
+
+    # --------------------------------------------------------
+    # Killer heuristic
+    # --------------------------------------------------------
+
+    killers = KILLERS.setdefault(ply, [])
+
+    if move not in killers:
+        killers.insert(0, move)
+
+        if len(killers) > 2:
+            killers.pop()
+
+    # --------------------------------------------------------
+    # History heuristic
+    # --------------------------------------------------------
+
+    piece = board.piece_at(move.from_square)
+
+    if piece is not None:
+        key = (
+            piece.piece_type,
+            move.from_square,
+            move.to_square,
+        )
+
+        HISTORY[key] = HISTORY.get(key, 0) + depth * depth
+
+
+# ============================================================
+# QUIESCENCE SEARCH
+# ============================================================
+
+def quiescence(board, alpha, beta, ply):
+    global NODES
+
+    NODES += 1
+    check_time()
+
+    moves = list(board.legal_moves)
+
+    # --------------------------------------------------------
+    # Terminal positions
+    # --------------------------------------------------------
+
+    if not moves:
+
+        if board.is_check():
+            return -MATE + ply
+
+        return 0
+
+    # --------------------------------------------------------
+    # If in check, standing pat is illegal.
+    # Search every legal evasion.
+    # --------------------------------------------------------
+
+    if board.is_check():
+
+        best_score = -INF
+
+        for move in ordered_moves(board, ply=ply):
+
+            board.push(move)
+
+            try:
+                score = -quiescence(
+                    board,
+                    -beta,
+                    -alpha,
+                    ply + 1,
+                )
+
+            finally:
+                board.pop()
+
+            best_score = max(best_score, score)
+            alpha = max(alpha, score)
+
+            if alpha >= beta:
+                break
+
+        return best_score
+
+    # --------------------------------------------------------
+    # Stand pat
+    # --------------------------------------------------------
+
+    stand_pat = evaluate(board)
+
+    if stand_pat >= beta:
+        return stand_pat
+
+    alpha = max(alpha, stand_pat)
+
+    # --------------------------------------------------------
+    # Search tactical continuations only
+    # --------------------------------------------------------
+
+    tactical_moves = [
+        move
+        for move in moves
+        if board.is_capture(move)
+        or move.promotion is not None
+    ]
+
+    tactical_moves.sort(
+        key=lambda move: move_order_score(
+            board,
+            move,
+            None,
+            ply,
+        ),
+        reverse=True,
+    )
+
+    for move in tactical_moves:
+
+        board.push(move)
+
+        try:
+            score = -quiescence(
+                board,
+                -beta,
+                -alpha,
+                ply + 1,
+            )
+
+        finally:
+            board.pop()
+
+        if score >= beta:
+            return score
+
+        alpha = max(alpha, score)
+
+    return alpha
+
+
+# ============================================================
+# NEGAMAX + ALPHA-BETA + PVS
+# ============================================================
 
 def negamax(board, depth, alpha, beta, ply):
     global NODES
@@ -134,18 +396,21 @@ def negamax(board, depth, alpha, beta, ply):
 
     key = position_key(board)
 
-    # -----------------------------
+    # --------------------------------------------------------
     # TRANSPOSITION TABLE LOOKUP
-    # -----------------------------
+    # --------------------------------------------------------
 
     entry = TT.get(key)
     tt_move = None
 
     if entry is not None:
+
         entry_depth, entry_score, entry_flag, entry_move = entry
+
         tt_move = entry_move
 
         if entry_depth >= depth:
+
             if entry_flag == EXACT:
                 return entry_score
 
@@ -158,40 +423,100 @@ def negamax(board, depth, alpha, beta, ply):
             if alpha >= beta:
                 return entry_score
 
-    # These are the bounds for the search we are actually about to perform.
     alpha_start = alpha
     beta_start = beta
 
-    moves = ordered_moves(board, tt_move)
+    moves = ordered_moves(
+        board,
+        tt_move,
+        ply,
+    )
 
-    # Terminal position.
+    # --------------------------------------------------------
+    # TERMINAL POSITION
+    # --------------------------------------------------------
+
     if not moves:
+
         if board.is_check():
-            # Prefer faster mates and postpone being mated.
             return -MATE + ply
 
         return 0
 
-    # Search horizon.
+    # --------------------------------------------------------
+    # SEARCH HORIZON
+    # --------------------------------------------------------
+
     if depth == 0:
-        return evaluate(board)
+        return quiescence(
+            board,
+            alpha,
+            beta,
+            ply,
+        )
 
     best_score = -INF
     best_move = None
 
+    first_move = True
+
+    # --------------------------------------------------------
+    # SEARCH MOVES
+    # --------------------------------------------------------
+
     for move in moves:
+
         board.push(move)
 
         try:
-            score = -negamax(
-                board,
-                depth - 1,
-                -beta,
-                -alpha,
-                ply + 1,
-            )
+
+            if first_move:
+
+                # Principal variation candidate:
+                # search normally.
+                score = -negamax(
+                    board,
+                    depth - 1,
+                    -beta,
+                    -alpha,
+                    ply + 1,
+                )
+
+                first_move = False
+
+            else:
+
+                # --------------------------------------------
+                # PVS
+                #
+                # First ask the cheaper question:
+                #
+                # "Can this move beat alpha at all?"
+                #
+                # Search with a tiny window.
+                # --------------------------------------------
+
+                score = -negamax(
+                    board,
+                    depth - 1,
+                    -alpha - 1,
+                    -alpha,
+                    ply + 1,
+                )
+
+                # If it does beat alpha, we need its
+                # actual value, so re-search fully.
+                if alpha < score < beta:
+
+                    score = -negamax(
+                        board,
+                        depth - 1,
+                        -beta,
+                        -alpha,
+                        ply + 1,
+                    )
+
         finally:
-            # Important: restore the board even if the clock interrupts search.
             board.pop()
 
         if score > best_score:
@@ -201,16 +526,26 @@ def negamax(board, depth, alpha, beta, ply):
         alpha = max(alpha, score)
 
         if alpha >= beta:
+
+            record_quiet_cutoff(
+                board,
+                move,
+                depth,
+                ply,
+            )
+
             break
 
-    # -----------------------------
+    # --------------------------------------------------------
     # TRANSPOSITION TABLE STORE
-    # -----------------------------
+    # --------------------------------------------------------
 
     if best_score <= alpha_start:
         flag = UPPER
+
     elif best_score >= beta_start:
         flag = LOWER
+
     else:
         flag = EXACT
 
@@ -224,6 +559,10 @@ def negamax(board, depth, alpha, beta, ply):
     return best_score
 
 
+# ============================================================
+# ROOT SEARCH
+# ============================================================
+
 def search_root(board, depth):
     alpha = -INF
     beta = INF
@@ -232,25 +571,63 @@ def search_root(board, depth):
     best_move = None
 
     entry = TT.get(position_key(board))
-    tt_move = entry[3] if entry is not None else None
 
-    moves = ordered_moves(board, tt_move)
+    if entry is not None:
+        tt_move = entry[3]
+    else:
+        tt_move = None
+
+    moves = ordered_moves(
+        board,
+        tt_move,
+        0,
+    )
+
+    first_move = True
 
     for move in moves:
-        # Root checks the clock every move as well.
+
         if time.monotonic() >= DEADLINE:
             raise SearchTimeout
 
         board.push(move)
 
         try:
-            score = -negamax(
-                board,
-                depth - 1,
-                -beta,
-                -alpha,
-                1,
-            )
+
+            if first_move:
+
+                score = -negamax(
+                    board,
+                    depth - 1,
+                    -beta,
+                    -alpha,
+                    1,
+                )
+
+                first_move = False
+
+            else:
+
+                # PVS narrow search.
+                score = -negamax(
+                    board,
+                    depth - 1,
+                    -alpha - 1,
+                    -alpha,
+                    1,
+                )
+
+                # Re-search if it genuinely improves alpha.
+                if alpha < score < beta:
+
+                    score = -negamax(
+                        board,
+                        depth - 1,
+                        -beta,
+                        -alpha,
+                        1,
+                    )
+
         finally:
             board.pop()
 
@@ -263,30 +640,9 @@ def search_root(board, depth):
     return best_move, best_score
 
 
-def choose_time_budget(time_left_ms):
-    """
-    Conservative first-pass clock management.
-
-    Spend more when we have lots of time, but preserve a reserve.
-    """
-
-    if time_left_ms <= 500:
-        return max(10.0, 0.20 * time_left_ms)
-
-    # Roughly use 3% of remaining clock plus most of the 0.5 s increment.
-    budget_ms = 0.03 * time_left_ms + 350
-
-    # Don't spend huge amounts on one ordinary move yet.
-    budget_ms = min(budget_ms, 3000)
-
-    # Keep at least ~500 ms in reserve whenever possible.
-    budget_ms = min(
-        budget_ms,
-        max(50, time_left_ms - 500),
-    )
-
-    return budget_ms
-
+# ============================================================
+# ENTRYPOINT
+# ============================================================
 
 def get_move(fen: str, time_left_ms: int) -> str:
     global NODES
@@ -296,41 +652,62 @@ def get_move(fen: str, time_left_ms: int) -> str:
     board = chess.Board(fen)
     legal_moves = list(board.legal_moves)
 
-    # Normally the platform should not ask us to move in a terminal position.
     if not legal_moves:
-        raise ValueError("get_move called on terminal position")
+        raise ValueError(
+            "get_move called on terminal position"
+        )
 
-    # Prevent an unbounded Python dictionary from eventually consuming too much RAM.
+    # Prevent unlimited TT growth.
     if len(TT) > MAX_TT_SIZE:
         TT.clear()
 
     budget_ms = choose_time_budget(time_left_ms)
 
-    DEADLINE = time.monotonic() + budget_ms / 1000.0
+    DEADLINE = (
+        time.monotonic()
+        + budget_ms / 1000.0
+    )
+
     NODES = 0
 
-    # Emergency fallback. We can always return this if the first search times out.
+    # Emergency fallback.
     best_move = legal_moves[0]
     best_score = None
 
     depth = 1
 
+    # --------------------------------------------------------
+    # ITERATIVE DEEPENING
+    # --------------------------------------------------------
+
     while True:
+
         start_nodes = NODES
         start_time = time.monotonic()
 
         try:
-            move, score = search_root(board, depth)
+
+            move, score = search_root(
+                board,
+                depth,
+            )
 
         except SearchTimeout:
             break
 
-        # Only accept the result from a COMPLETED depth.
+        # Only keep results from completed iterations.
         best_move = move
         best_score = score
 
-        elapsed = time.monotonic() - start_time
-        depth_nodes = NODES - start_nodes
+        elapsed = (
+            time.monotonic()
+            - start_time
+        )
+
+        depth_nodes = (
+            NODES
+            - start_nodes
+        )
 
         print(
             f"depth={depth} "
