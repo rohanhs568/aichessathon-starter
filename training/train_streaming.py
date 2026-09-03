@@ -12,17 +12,12 @@ import torch
 from torch import nn
 
 
-# ------------------------------------------------------------
-# Feature representation
-# ------------------------------------------------------------
+# ============================================================
+# Constants
+# ============================================================
 
-# 2 relative colours x 6 piece types x 64 squares
-INPUT_FEATURES = 768
-
-# Padding value used to fill unused piece slots.
-# The embedding table has one extra row for this.
+INPUT_FEATURES = 768          # 2 relative colours x 6 piece types x 64 squares
 PADDING_INDEX = 768
-
 MAX_STANDARD_PIECES = 32
 
 PIECE_INDEX = {
@@ -44,105 +39,65 @@ MATERIAL_VALUE = {
 }
 
 
-# ------------------------------------------------------------
-# Fast FEN encoding
-# ------------------------------------------------------------
+# ============================================================
+# Position encoding
+# ============================================================
 
 def encode_fen(fen):
     """
-    Convert a FEN into up to 32 active feature indices.
+    Encode a FEN as active piece-square feature indices.
 
-    Representation is relative to side to move.
+    Features are relative to side to move:
+      - channel 0 = our pieces
+      - channel 1 = opponent pieces
+      - if Black is to move, ranks are vertically mirrored
 
     Returns:
-        indices
-        piece_count
-        material_stm
+        (indices, piece_count, material_from_stm_pov)
 
-    Invalid or non-standard positions return None.
+    Returns None for malformed/non-standard positions.
     """
-
     fields = fen.split()
-
     if len(fields) < 2:
         return None
 
-    board_fen = fields[0]
-    stm = fields[1]
-
+    board_fen, stm = fields[0], fields[1]
     if stm not in ("w", "b"):
         return None
 
     ranks = board_fen.split("/")
-
-    # A valid chess board must have exactly 8 ranks.
     if len(ranks) != 8:
         return None
 
     white_to_move = stm == "w"
-
     indices = []
-
     own_material = 0
     opponent_material = 0
 
     for fen_rank_index, rank_text in enumerate(ranks):
-
-        # FEN starts at rank 8 and moves down to rank 1.
         board_rank = 7 - fen_rank_index
-
         file_index = 0
 
         for char in rank_text:
-
             if char.isdigit():
-
-                empty_squares = int(char)
-
-                # Individual FEN digit must represent 1..8 empties.
-                if not 1 <= empty_squares <= 8:
+                empty = int(char)
+                if not 1 <= empty <= 8:
                     return None
-
-                file_index += empty_squares
-
+                file_index += empty
                 if file_index > 8:
                     return None
-
                 continue
 
             piece_type = char.lower()
-
-            if piece_type not in PIECE_INDEX:
-                return None
-
-            # A piece cannot occur beyond the h-file.
-            if file_index >= 8:
+            if piece_type not in PIECE_INDEX or file_index >= 8:
                 return None
 
             piece_is_white = char.isupper()
+            is_ours = piece_is_white if white_to_move else not piece_is_white
+            relative_colour = 0 if is_ours else 1
 
-            is_ours = (
-                piece_is_white
-                if white_to_move
-                else not piece_is_white
-            )
-
-            relative_colour = (
-                0 if is_ours else 1
-            )
-
-            # Mirror ranks when Black is to move.
-            canonical_rank = (
-                board_rank
-                if white_to_move
-                else 7 - board_rank
-            )
-
-            square = (
-                canonical_rank * 8
-                + file_index
-            )
-
+            canonical_rank = board_rank if white_to_move else 7 - board_rank
+            square = canonical_rank * 8 + file_index
             if not 0 <= square < 64:
                 return None
 
@@ -151,15 +106,12 @@ def encode_fen(fen):
                 + PIECE_INDEX[piece_type] * 64
                 + square
             )
-
-            # Defensive check before this ever reaches CUDA.
             if not 0 <= feature_index < INPUT_FEATURES:
                 return None
 
             indices.append(feature_index)
 
             value = MATERIAL_VALUE[piece_type]
-
             if is_ours:
                 own_material += value
             else:
@@ -167,125 +119,80 @@ def encode_fen(fen):
 
             file_index += 1
 
-        # Every FEN rank must describe exactly 8 squares.
         if file_index != 8:
             return None
 
-    # Ordinary chess positions cannot contain >32 pieces.
     if len(indices) > MAX_STANDARD_PIECES:
         return None
 
-    return (
-        indices,
-        len(indices),
-        own_material - opponent_material,
-    )
+    return indices, len(indices), own_material - opponent_material
 
 
-# ------------------------------------------------------------
-# Target construction
-# ------------------------------------------------------------
+# ============================================================
+# Targets
+# ============================================================
 
-def make_target(
-    side_to_move,
-    cp_white,
-    mate_white,
-    clip_cp,
-    mate_cp,
-):
+def make_target(side_to_move, cp_white, mate_white, clip_cp, mate_cp):
     """
-    Convert Lichess White-POV labels to side-to-move POV.
+    Convert White-POV Lichess labels to side-to-move POV.
 
-    Ordinary evaluations are clipped.
-
-    Mate positions are retained and mapped to +/- mate_cp.
-
-    This is deliberately configurable because mate/target
-    handling is one of our experiments.
+    CP values are clipped to +/- clip_cp.
+    Mate labels are mapped to +/- mate_cp.
     """
-
     sign = 1.0 if side_to_move == "w" else -1.0
 
     if cp_white is not None:
         cp_stm = sign * cp_white
-
-        cp_stm = max(
-            -clip_cp,
-            min(clip_cp, cp_stm),
-        )
-
-        return float(cp_stm), False
+        return float(max(-clip_cp, min(clip_cp, cp_stm))), False
 
     if mate_white is not None:
-
         mate_stm = sign * mate_white
-
         if mate_stm > 0:
             return float(mate_cp), True
-
         if mate_stm < 0:
             return float(-mate_cp), True
-
-        # Extremely unusual mate=0 record.
         return 0.0, True
 
     return None
 
 
-# ------------------------------------------------------------
-# Network
-# ------------------------------------------------------------
+# ============================================================
+# Model
+# ============================================================
 
 class SparseEvaluator(nn.Module):
+    """
+    Sparse equivalent of:
 
-    def __init__(
-        self,
-        hidden_size=64,
-        activation="relu",
-        output_buckets=1,
-    ):
+        Linear(768, hidden) -> activation -> Linear(hidden, buckets)
+
+    Since the 768-vector is binary and sparse, the first linear layer is
+    implemented by summing embeddings for active piece-square features.
+    """
+
+    def __init__(self, hidden_size=64, activation="relu", output_buckets=1):
         super().__init__()
 
-        self.hidden_size = hidden_size
         self.activation_name = activation
         self.output_buckets = output_buckets
 
-        # Each active chess feature has one hidden vector.
-        #
-        # Summing these is mathematically equivalent to:
-        #
-        #     Linear(768, hidden)
-        #
-        # applied to the sparse binary board representation.
         self.embedding = nn.Embedding(
             INPUT_FEATURES + 1,
             hidden_size,
             padding_idx=PADDING_INDEX,
         )
 
-        # Match the scale used by nn.Linear(768, hidden).
-        #
-        # Our embedding rows are exactly the columns of the equivalent
-        # dense linear layer, so they should have the same initialization
-        # scale rather than nn.Embedding's much larger default.
+        # Match nn.Linear(768, hidden) initialization scale.
         input_bound = 1.0 / math.sqrt(INPUT_FEATURES)
 
         with torch.no_grad():
-            self.embedding.weight[
-                :INPUT_FEATURES
-            ].uniform_(
+            self.embedding.weight[:INPUT_FEATURES].uniform_(
                 -input_bound,
                 input_bound,
             )
+            self.embedding.weight[PADDING_INDEX].zero_()
 
-            self.embedding.weight[
-                PADDING_INDEX
-            ].zero_()
-
-        self.hidden_bias = nn.Parameter(
-            torch.empty(hidden_size)
-        )
-
+        self.hidden_bias = nn.Parameter(torch.empty(hidden_size))
         nn.init.uniform_(
             self.hidden_bias,
             -input_bound,
@@ -298,13 +205,15 @@ class SparseEvaluator(nn.Module):
         )
 
     def activate(self, x):
-
         if self.activation_name == "relu":
             return torch.relu(x)
 
         if self.activation_name == "screlu":
-            # Squared clipped ReLU
-            return torch.clamp(x, 0.0, 1.0).square()
+            return torch.clamp(
+                x,
+                0.0,
+                1.0,
+            ).square()
 
         raise ValueError(
             f"Unknown activation: {self.activation_name}"
@@ -315,29 +224,19 @@ class SparseEvaluator(nn.Module):
         feature_indices,
         piece_counts,
     ):
-        # [batch, 32, hidden]
-        embeddings = self.embedding(feature_indices)
+        hidden = self.embedding(
+            feature_indices
+        ).sum(dim=1)
 
-        # Equivalent to W x for sparse binary x.
-        hidden = embeddings.sum(dim=1)
-
-        hidden = hidden + self.hidden_bias
-
-        hidden = self.activate(hidden)
+        hidden = self.activate(
+            hidden + self.hidden_bias
+        )
 
         outputs = self.output(hidden)
 
         if self.output_buckets == 1:
             return outputs[:, 0]
 
-        # Piece-count bucket scheme:
-        #
-        # 3-5 pieces   -> bucket 0
-        # 6-9          -> bucket 1
-        # ...
-        #
-        # With 8 buckets and standard chess this spans
-        # the full 3-32 piece range.
         bucket = torch.div(
             piece_counts - 2,
             4,
@@ -356,22 +255,21 @@ class SparseEvaluator(nn.Module):
         ).squeeze(1)
 
 
-# ------------------------------------------------------------
-# Validation data
-# ------------------------------------------------------------
+# ============================================================
+# Validation
+# ============================================================
 
 def load_validation(
     path,
     clip_cp,
     mate_cp,
 ):
-
     print(
         "Loading permanent validation set...",
         flush=True,
     )
 
-    feature_rows = []
+    features = []
     piece_counts = []
     targets = []
     material_scores = []
@@ -380,19 +278,22 @@ def load_validation(
     skipped_nonstandard = 0
 
     with path.open(newline="") as file:
-
         reader = csv.DictReader(file)
 
         for row in reader:
-
-            encoded = encode_fen(row["fen"])
+            encoded = encode_fen(
+                row["fen"]
+            )
 
             if encoded is None:
                 skipped_nonstandard += 1
                 continue
 
-            indices, piece_count, material = encoded
-
+            (
+                indices,
+                piece_count,
+                material,
+            ) = encoded
 
             cp_white = (
                 None
@@ -425,35 +326,34 @@ def load_validation(
                 dtype=np.int16,
             )
 
-            feature_row[:len(indices)] = indices
+            feature_row[
+                :len(indices)
+            ] = indices
 
-            feature_rows.append(feature_row)
-
+            features.append(feature_row)
             piece_counts.append(piece_count)
             targets.append(target)
             material_scores.append(material)
             mate_flags.append(is_mate)
 
-    X = np.stack(feature_rows)
-
-    piece_counts = np.asarray(
-        piece_counts,
-        dtype=np.int16,
-    )
-
-    targets = np.asarray(
-        targets,
-        dtype=np.float32,
-    )
-
-    material_scores = np.asarray(
-        material_scores,
-        dtype=np.float32,
-    )
-
-    mate_flags = np.asarray(
-        mate_flags,
-        dtype=bool,
+    validation = (
+        np.stack(features),
+        np.asarray(
+            piece_counts,
+            dtype=np.int16,
+        ),
+        np.asarray(
+            targets,
+            dtype=np.float32,
+        ),
+        np.asarray(
+            material_scores,
+            dtype=np.float32,
+        ),
+        np.asarray(
+            mate_flags,
+            dtype=bool,
+        ),
     )
 
     print(
@@ -462,27 +362,18 @@ def load_validation(
     )
 
     print(
-        f"Non-standard skipped: {skipped_nonstandard:,}",
+        f"Non-standard skipped: "
+        f"{skipped_nonstandard:,}",
         flush=True,
     )
 
     print(
-        f"Mate positions: {mate_flags.sum():,}",
+        f"Mate positions: {sum(mate_flags):,}",
         flush=True,
     )
 
-    return (
-        X,
-        piece_counts,
-        targets,
-        material_scores,
-        mate_flags,
-    )
+    return validation
 
-
-# ------------------------------------------------------------
-# Validation metrics
-# ------------------------------------------------------------
 
 @torch.no_grad()
 def evaluate_model(
@@ -492,7 +383,6 @@ def evaluate_model(
     scale,
     batch_size,
 ):
-
     (
         X,
         piece_counts,
@@ -515,158 +405,178 @@ def evaluate_model(
             len(targets),
         )
 
-        features = torch.from_numpy(
+        feature_tensor = torch.from_numpy(
             X[start:end]
         ).to(
             device=device,
             dtype=torch.long,
         )
 
-        counts = torch.from_numpy(
+        count_tensor = torch.from_numpy(
             piece_counts[start:end]
         ).to(
             device=device,
             dtype=torch.long,
         )
 
-        output = model(
-            features,
-            counts,
-        )
-
         predictions.append(
-            output.cpu().numpy()
+            model(
+                feature_tensor,
+                count_tensor,
+            )
+            .cpu()
+            .numpy()
         )
 
-    predictions = np.concatenate(
-        predictions
+    predictions_cp = (
+        np.concatenate(predictions)
+        * scale
     )
 
-    predictions_cp = predictions * scale
-
-    error = predictions_cp - targets
-
-    all_mae = np.mean(
-        np.abs(error)
-    )
-
-    all_rmse = np.sqrt(
-        np.mean(error ** 2)
+    error = (
+        predictions_cp
+        - targets
     )
 
     cp_mask = ~mate_flags
 
     cp_error = (
-    predictions_cp[cp_mask]
-    - targets[cp_mask]
+        predictions_cp[cp_mask]
+        - targets[cp_mask]
     )
 
-    cp_mae = np.mean(
-        np.abs(cp_error)
-    )
-
-    cp_rmse = np.sqrt(
-        np.mean(cp_error ** 2)
-    )
-
-    cp_zero_mae = np.mean(
-        np.abs(targets[cp_mask])
-    )
-
-    cp_decisive = (
+    decisive = (
         cp_mask
         & (np.abs(targets) >= 50)
     )
 
-    sign_accuracy = np.mean(
-        np.sign(
-            predictions_cp[cp_decisive]
-        )
-        ==
-        np.sign(
-            targets[cp_decisive]
-        )
-    )
     if mate_flags.any():
-
         mate_sign_accuracy = np.mean(
             np.sign(
-                predictions_cp[mate_flags]
+                predictions_cp[
+                    mate_flags
+                ]
             )
             ==
             np.sign(
-                targets[mate_flags]
+                targets[
+                    mate_flags
+                ]
             )
         )
-
     else:
-        mate_sign_accuracy = float("nan")
-
-    zero_mae = np.mean(
-        np.abs(targets)
-    )
-
-    # Compare the handcrafted material evaluator only
-    # on ordinary CP-labelled positions.
-    material_mae = np.mean(
-        np.abs(
-            material_scores[cp_mask]
-            - targets[cp_mask]
+        mate_sign_accuracy = float(
+            "nan"
         )
-    )
 
-    within_50 = np.mean(
-        np.abs(error[cp_mask]) <= 50
-    )
-
-    within_100 = np.mean(
-        np.abs(error[cp_mask]) <= 100
-    )
-
-    model.train()
-
-    return {
-        "all_mae": float(all_mae),
-        "all_rmse": float(all_rmse),
-        "cp_mae": float(cp_mae),
-        "sign_accuracy": float(sign_accuracy),
+    metrics = {
+        "all_mae": float(
+            np.mean(
+                np.abs(error)
+            )
+        ),
+        "all_rmse": float(
+            np.sqrt(
+                np.mean(
+                    error ** 2
+                )
+            )
+        ),
+        "cp_mae": float(
+            np.mean(
+                np.abs(cp_error)
+            )
+        ),
+        "cp_rmse": float(
+            np.sqrt(
+                np.mean(
+                    cp_error ** 2
+                )
+            )
+        ),
+        "cp_zero_mae": float(
+            np.mean(
+                np.abs(
+                    targets[
+                        cp_mask
+                    ]
+                )
+            )
+        ),
+        "sign_accuracy": float(
+            np.mean(
+                np.sign(
+                    predictions_cp[
+                        decisive
+                    ]
+                )
+                ==
+                np.sign(
+                    targets[
+                        decisive
+                    ]
+                )
+            )
+        ),
         "mate_sign_accuracy": float(
             mate_sign_accuracy
         ),
-        "within_50": float(within_50),
-        "within_100": float(within_100),
-        "zero_mae": float(zero_mae),
-        "material_mae": float(material_mae),
-        "cp_rmse": float(cp_rmse),
-        "cp_zero_mae": float(cp_zero_mae),
+        "within_50": float(
+            np.mean(
+                np.abs(
+                    cp_error
+                )
+                <= 50
+            )
+        ),
+        "within_100": float(
+            np.mean(
+                np.abs(
+                    cp_error
+                )
+                <= 100
+            )
+        ),
+        "zero_mae": float(
+            np.mean(
+                np.abs(targets)
+            )
+        ),
+        "material_mae": float(
+            np.mean(
+                np.abs(
+                    material_scores[
+                        cp_mask
+                    ]
+                    -
+                    targets[
+                        cp_mask
+                    ]
+                )
+            )
+        ),
     }
 
+    model.train()
 
-# ------------------------------------------------------------
-# Shard streaming
-# ------------------------------------------------------------
+    return metrics
+
+
+# ============================================================
+# Streaming
+# ============================================================
 
 def read_shard(
     path,
     shuffle_buffer,
     rng,
 ):
-    """
-    Stream one compressed TSV shard.
-
-    Lines are locally shuffled in reasonably large blocks.
-
-    Full global shuffling of 400m positions would be expensive,
-    so we combine:
-        - random shard order
-        - random order within large local buffers
-
-    This gives good stochasticity without materialising the
-    full dataset.
-    """
-
     process = subprocess.Popen(
-        ["zstd", "-dc", str(path)],
+        [
+            "zstd",
+            "-dc",
+            str(path),
+        ],
         stdout=subprocess.PIPE,
         text=True,
         bufsize=1024 * 1024,
@@ -675,13 +585,10 @@ def read_shard(
     buffer = []
 
     try:
-
         for line in process.stdout:
-
             buffer.append(line)
 
             if len(buffer) >= shuffle_buffer:
-
                 rng.shuffle(buffer)
 
                 for item in buffer:
@@ -690,58 +597,77 @@ def read_shard(
                 buffer.clear()
 
         if buffer:
-
             rng.shuffle(buffer)
 
             for item in buffer:
                 yield item
 
     finally:
-
         process.stdout.close()
 
         code = process.wait()
 
-        # -13 is SIGPIPE. It is expected when training reaches
-# max_positions part-way through a shard and deliberately
-# stops consuming the decompression stream.
-        if code not in (0, -13):
+        # Expected if max_positions is hit
+        # part-way through a shard.
+        if code not in (
+            0,
+            -13,
+        ):
             raise RuntimeError(
                 f"zstd failed for {path} "
                 f"with exit code {code}"
             )
 
-# ------------------------------------------------------------
-# Checkpoints
-# ------------------------------------------------------------
 
-def format_position_count(value):
+# ============================================================
+# Helpers
+# ============================================================
 
+def format_position_count(
+    value,
+):
     if value >= 1_000_000_000:
-        number = value / 1_000_000_000
+        number = (
+            value
+            / 1_000_000_000
+        )
 
         if number.is_integer():
-            return f"{int(number)}b"
+            return (
+                f"{int(number)}b"
+            )
 
         return f"{number:g}b"
 
     if value >= 1_000_000:
-        number = value / 1_000_000
+        number = (
+            value
+            / 1_000_000
+        )
 
         if number.is_integer():
-            return f"{int(number)}m"
+            return (
+                f"{int(number)}m"
+            )
 
         return f"{number:g}m"
 
     if value >= 1_000:
-        return f"{value // 1000}k"
+        return (
+            f"{value // 1_000}k"
+        )
 
     return str(value)
 
 
-def parse_position_count(text):
-
-    text = text.strip().lower()
+def parse_position_count(
+    text,
+):
+    text = (
+        text
+        .strip()
+        .lower()
+    )
 
     multiplier = 1
 
@@ -757,22 +683,61 @@ def parse_position_count(text):
         multiplier = 1_000_000_000
         text = text[:-1]
 
-    return int(float(text) * multiplier)
+    return int(
+        float(text)
+        * multiplier
+    )
 
 
-def parse_checkpoint_list(text):
-
-    values = []
-
-    for item in text.split(","):
-        item = item.strip()
-
-        if item:
-            values.append(
-                parse_position_count(item)
+def parse_checkpoint_list(
+    text,
+):
+    return sorted(
+        {
+            parse_position_count(
+                item.strip()
             )
+            for item
+            in text.split(",")
+            if item.strip()
+        }
+    )
 
-    return sorted(set(values))
+
+def learning_rate_at_position(
+    positions_seen,
+    max_positions,
+    start_lr,
+    end_lr_factor,
+):
+    progress = min(
+        positions_seen
+        / max_positions,
+        1.0,
+    )
+
+    return (
+        start_lr
+        * (
+            1.0
+            -
+            progress
+            * (
+                1.0
+                - end_lr_factor
+            )
+        )
+    )
+
+
+def set_optimizer_lr(
+    optimizer,
+    lr,
+):
+    for group in (
+        optimizer.param_groups
+    ):
+        group["lr"] = lr
 
 
 def save_checkpoint(
@@ -783,28 +748,146 @@ def save_checkpoint(
     positions_seen,
     metrics,
 ):
-
     torch.save(
         {
-            "state_dict": model.state_dict(),
+            "state_dict":
+                model.state_dict(),
             "optimizer_state_dict":
                 optimizer.state_dict(),
-            "positions_seen": positions_seen,
-            "metrics": metrics,
-            "config": config,
+            "positions_seen":
+                positions_seen,
+            "metrics":
+                metrics,
+            "config":
+                config,
         },
         path,
     )
 
 
-# ------------------------------------------------------------
-# Main training loop
-# ------------------------------------------------------------
+def validate_resume_config(
+    saved_config,
+    args,
+    max_positions,
+):
+    """
+    Refuse to resume if doing so would
+    silently change the experiment.
+
+    Missing fields are tolerated for
+    older checkpoints.
+    """
+
+    required = {
+        "hidden":
+            args.hidden,
+        "activation":
+            args.activation,
+        "buckets":
+            args.buckets,
+        "batch_size":
+            args.batch_size,
+        "learning_rate":
+            args.learning_rate,
+        "end_lr_factor":
+            args.end_lr_factor,
+        "weight_decay":
+            args.weight_decay,
+        "clip_cp":
+            args.clip_cp,
+        "mate_cp":
+            args.mate_cp,
+        "scale":
+            args.scale,
+        "min_depth":
+            args.min_depth,
+        "max_positions":
+            max_positions,
+    }
+
+    for (
+        key,
+        current_value,
+    ) in required.items():
+
+        if key not in saved_config:
+            continue
+
+        saved_value = (
+            saved_config[key]
+        )
+
+        if (
+            saved_value
+            != current_value
+        ):
+            raise RuntimeError(
+                f"Resume config mismatch "
+                f"for '{key}': "
+                f"checkpoint="
+                f"{saved_value}, "
+                f"current="
+                f"{current_value}"
+            )
+
+
+def print_checkpoint_metrics(
+    metrics,
+):
+    print(
+        f"  CP MAE:        "
+        f"{metrics['cp_mae']:.1f} cp"
+    )
+
+    print(
+        f"  CP RMSE:       "
+        f"{metrics['cp_rmse']:.1f} cp"
+    )
+
+    print(
+        f"  All MAE:       "
+        f"{metrics['all_mae']:.1f} cp"
+    )
+
+    print(
+        f"  Sign accuracy: "
+        f"{100 * metrics['sign_accuracy']:.1f}%"
+    )
+
+    print(
+        f"  Mate sign:     "
+        f"{100 * metrics['mate_sign_accuracy']:.1f}%"
+    )
+
+    print(
+        f"  Within 50cp:   "
+        f"{100 * metrics['within_50']:.1f}%"
+    )
+
+    print(
+        f"  Within 100cp:  "
+        f"{100 * metrics['within_100']:.1f}%"
+    )
+
+    print(
+        f"  Material MAE:  "
+        f"{metrics['material_mae']:.1f} cp"
+    )
+
+    print(
+        f"  Zero CP MAE:   "
+        f"{metrics['cp_zero_mae']:.1f} cp"
+    )
+
+
+# ============================================================
+# Main
+# ============================================================
 
 def main():
-
     parser = argparse.ArgumentParser()
 
+    # Paths
     parser.add_argument(
         "--shards",
         type=Path,
@@ -824,6 +907,17 @@ def main():
     )
 
     parser.add_argument(
+        "--resume",
+        type=Path,
+        default=None,
+        help=(
+            "Resume from a checkpoint "
+            "produced by this trainer."
+        ),
+    )
+
+    # Architecture
+    parser.add_argument(
         "--hidden",
         type=int,
         default=64,
@@ -831,7 +925,10 @@ def main():
 
     parser.add_argument(
         "--activation",
-        choices=["relu", "screlu"],
+        choices=[
+            "relu",
+            "screlu",
+        ],
         default="relu",
     )
 
@@ -841,6 +938,7 @@ def main():
         default=1,
     )
 
+    # Batching
     parser.add_argument(
         "--batch-size",
         type=int,
@@ -859,6 +957,7 @@ def main():
         default=65536,
     )
 
+    # Optimisation
     parser.add_argument(
         "--learning-rate",
         type=float,
@@ -877,6 +976,7 @@ def main():
         default=1e-5,
     )
 
+    # Targets/data
     parser.add_argument(
         "--clip-cp",
         type=float,
@@ -901,6 +1001,7 @@ def main():
         default=0,
     )
 
+    # Run length
     parser.add_argument(
         "--max-positions",
         type=str,
@@ -910,7 +1011,10 @@ def main():
     parser.add_argument(
         "--checkpoints",
         type=str,
-        default="1m,5m,10m,25m,50m,100m,200m,400m",
+        default=(
+            "1m,5m,10m,25m,"
+            "50m,100m,200m,400m"
+        ),
     )
 
     parser.add_argument(
@@ -927,8 +1031,10 @@ def main():
 
     args = parser.parse_args()
 
-    max_positions = parse_position_count(
-        args.max_positions
+    max_positions = (
+        parse_position_count(
+            args.max_positions
+        )
     )
 
     checkpoint_positions = [
@@ -940,8 +1046,10 @@ def main():
         if value <= max_positions
     ]
 
-    log_every = parse_position_count(
-        args.log_every
+    log_every = (
+        parse_position_count(
+            args.log_every
+        )
     )
 
     args.run_dir.mkdir(
@@ -949,9 +1057,17 @@ def main():
         exist_ok=True,
     )
 
-    random.seed(args.seed)
-    np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
+    random.seed(
+        args.seed
+    )
+
+    np.random.seed(
+        args.seed
+    )
+
+    torch.manual_seed(
+        args.seed
+    )
 
     device = torch.device(
         "cuda"
@@ -965,7 +1081,6 @@ def main():
     )
 
     if device.type == "cuda":
-
         print(
             f"GPU: "
             f"{torch.cuda.get_device_name(0)}",
@@ -980,11 +1095,13 @@ def main():
 
     if not shard_paths:
         raise RuntimeError(
-            f"No shards found in {args.shards}"
+            f"No shards found in "
+            f"{args.shards}"
         )
 
     print(
-        f"Training shards: {len(shard_paths)}",
+        f"Training shards: "
+        f"{len(shard_paths)}",
         flush=True,
     )
 
@@ -1002,11 +1119,13 @@ def main():
 
     parameter_count = sum(
         parameter.numel()
-        for parameter in model.parameters()
+        for parameter
+        in model.parameters()
     )
 
     print(
-        f"Parameters: {parameter_count:,}",
+        f"Parameters: "
+        f"{parameter_count:,}",
         flush=True,
     )
 
@@ -1016,35 +1135,145 @@ def main():
         weight_decay=args.weight_decay,
     )
 
-    # Robust to very large evaluation mistakes.
-    loss_function = nn.SmoothL1Loss(
-        beta=0.25
+    loss_function = (
+        nn.SmoothL1Loss(
+            beta=0.25
+        )
     )
 
     config = {
-        "hidden": args.hidden,
-        "activation": args.activation,
-        "buckets": args.buckets,
-        "batch_size": args.batch_size,
+        "hidden":
+            args.hidden,
+        "activation":
+            args.activation,
+        "buckets":
+            args.buckets,
+        "batch_size":
+            args.batch_size,
         "learning_rate":
             args.learning_rate,
         "end_lr_factor":
             args.end_lr_factor,
         "weight_decay":
             args.weight_decay,
-        "clip_cp": args.clip_cp,
-        "mate_cp": args.mate_cp,
-        "scale": args.scale,
-        "min_depth": args.min_depth,
+        "clip_cp":
+            args.clip_cp,
+        "mate_cp":
+            args.mate_cp,
+        "scale":
+            args.scale,
+        "min_depth":
+            args.min_depth,
         "max_positions":
             max_positions,
-        "seed": args.seed,
+        "seed":
+            args.seed,
         "encoding":
-            "sparse_relative_piece_square_rank_mirror",
+            (
+                "sparse_relative_"
+                "piece_square_"
+                "rank_mirror"
+            ),
     }
 
+    # --------------------------------------------------------
+    # Optional resume
+    # --------------------------------------------------------
+
+    positions_seen = 0
+
+    if args.resume is not None:
+
+        if not args.resume.exists():
+            raise FileNotFoundError(
+                f"Resume checkpoint "
+                f"not found: "
+                f"{args.resume}"
+            )
+
+        print(
+            f"Resuming from: "
+            f"{args.resume}",
+            flush=True,
+        )
+
+        checkpoint = torch.load(
+            args.resume,
+            map_location=device,
+            weights_only=False,
+        )
+
+        validate_resume_config(
+            checkpoint.get(
+                "config",
+                {},
+            ),
+            args,
+            max_positions,
+        )
+
+        model.load_state_dict(
+            checkpoint[
+                "state_dict"
+            ]
+        )
+
+        optimizer.load_state_dict(
+            checkpoint[
+                "optimizer_state_dict"
+            ]
+        )
+
+        positions_seen = int(
+            checkpoint[
+                "positions_seen"
+            ]
+        )
+
+        if (
+            positions_seen
+            >= max_positions
+        ):
+            raise RuntimeError(
+                f"Checkpoint is already "
+                f"at {positions_seen:,} "
+                f"positions but "
+                f"max_positions is "
+                f"{max_positions:,}."
+            )
+
+        resumed_lr = (
+            learning_rate_at_position(
+                positions_seen,
+                max_positions,
+                args.learning_rate,
+                args.end_lr_factor,
+            )
+        )
+
+        set_optimizer_lr(
+            optimizer,
+            resumed_lr,
+        )
+
+        print(
+            f"Resumed at: "
+            f"{positions_seen:,} "
+            f"positions",
+            flush=True,
+        )
+
+        print(
+            f"Resumed learning rate: "
+            f"{resumed_lr:.2e}",
+            flush=True,
+        )
+
+    # Only write config once a resume
+    # has been successfully validated.
     with (
-        args.run_dir / "config.json"
+        args.run_dir
+        / "config.json"
     ).open("w") as file:
 
         json.dump(
@@ -1054,12 +1283,11 @@ def main():
         )
 
     results_path = (
-        args.run_dir / "results.jsonl"
+        args.run_dir
+        / "results.jsonl"
     )
 
-    # Initial validation gives us the random-network
-    # reference and validates the data path.
-    initial_metrics = evaluate_model(
+    metrics = evaluate_model(
         model,
         validation,
         device,
@@ -1067,25 +1295,63 @@ def main():
         args.validation_batch_size,
     )
 
+    if positions_seen > 0:
+        label = (
+            "Resume validation"
+        )
+    else:
+        label = (
+            "Initial validation"
+        )
+
     print()
+
     print(
-        "Initial validation:",
-        initial_metrics,
+        f"{label}: "
+        f"{metrics}",
         flush=True,
     )
+
     print()
 
-    positions_seen = 0
-    epoch = 0
-    next_log = log_every
+    remaining_checkpoints = [
+        value
+        for value
+        in checkpoint_positions
+        if value > positions_seen
+    ]
 
-    remaining_checkpoints = list(
-        checkpoint_positions
+    next_log = (
+        (
+            positions_seen
+            // log_every
+        )
+        + 1
+    ) * log_every
+
+    # On resume, continue with a fresh
+    # stochastic ordering of the data.
+    rng_seed = (
+        args.seed
+        if positions_seen == 0
+        else (
+            args.seed
+            + positions_seen
+        )
+    )
+
+    rng = random.Random(
+        rng_seed
+    )
+
+    session_start_positions = (
+        positions_seen
     )
 
     start_time = time.time()
 
-    # Preallocate CPU batches.
+    epoch = 0
+
     batch_features = np.full(
         (
             args.batch_size,
@@ -1108,11 +1374,17 @@ def main():
     batch_index = 0
 
     total_loss = 0.0
+
     total_loss_positions = 0
 
-    rng = random.Random(args.seed)
+    # --------------------------------------------------------
+    # Training loop
+    # --------------------------------------------------------
 
-    while positions_seen < max_positions:
+    while (
+        positions_seen
+        < max_positions
+    ):
 
         epoch += 1
 
@@ -1125,11 +1397,16 @@ def main():
         )
 
         print(
-            f"Starting data epoch {epoch}",
+            f"Starting data epoch "
+            f"{epoch} "
+            f"(global positions="
+            f"{positions_seen:,})",
             flush=True,
         )
 
-        for shard_path in epoch_shards:
+        for shard_path in (
+            epoch_shards
+        ):
 
             for line in read_shard(
                 shard_path,
@@ -1154,22 +1431,32 @@ def main():
                 ) = parts
 
                 try:
-                    depth = int(depth_text)
+                    depth = int(
+                        depth_text
+                    )
+
                     metadata_piece_count = int(
                         piece_count_text
                     )
+
                 except ValueError:
                     continue
 
-                if depth < args.min_depth:
+                if (
+                    depth
+                    < args.min_depth
+                ):
                     continue
 
-                # Ordinary standard chess cannot have
-                # more than 32 pieces.
-                if metadata_piece_count > 32:
+                if (
+                    metadata_piece_count
+                    > MAX_STANDARD_PIECES
+                ):
                     continue
 
-                encoded = encode_fen(fen)
+                encoded = encode_fen(
+                    fen
+                )
 
                 if encoded is None:
                     continue
@@ -1180,49 +1467,62 @@ def main():
                     _material,
                 ) = encoded
 
-                # Shard metadata and parsed FEN should agree.
-                if piece_count != metadata_piece_count:
+                if (
+                    piece_count
+                    != metadata_piece_count
+                ):
                     continue
 
-                fields = fen.split()
-
-                side_to_move = fields[1]
+                side_to_move = (
+                    fen.split()[1]
+                )
 
                 cp_white = (
                     None
                     if cp_text == ""
-                    else float(cp_text)
+                    else float(
+                        cp_text
+                    )
                 )
 
                 mate_white = (
                     None
                     if mate_text == ""
-                    else float(mate_text)
+                    else float(
+                        mate_text
+                    )
                 )
 
-                target_result = make_target(
-                    side_to_move,
-                    cp_white,
-                    mate_white,
-                    args.clip_cp,
-                    args.mate_cp,
+                target_result = (
+                    make_target(
+                        side_to_move,
+                        cp_white,
+                        mate_white,
+                        args.clip_cp,
+                        args.mate_cp,
+                    )
                 )
 
-                if target_result is None:
+                if (
+                    target_result
+                    is None
+                ):
                     continue
 
-                target_cp, _is_mate = (
-                    target_result
-                )
+                (
+                    target_cp,
+                    _is_mate,
+                ) = target_result
 
-                # Reset row to padding.
                 batch_features[
                     batch_index
-                ].fill(PADDING_INDEX)
+                ].fill(
+                    PADDING_INDEX
+                )
 
                 batch_features[
                     batch_index,
-                    :len(indices)
+                    :len(indices),
                 ] = indices
 
                 batch_counts[
@@ -1252,38 +1552,47 @@ def main():
                     batch_index
                 )
 
-                # Never allow a bad embedding index to reach CUDA.
-                feature_view = batch_features[
-                    :effective_batch
-                ]
+                feature_view = (
+                    batch_features[
+                        :effective_batch
+                    ]
+                )
+
+                count_view = (
+                    batch_counts[
+                        :effective_batch
+                    ]
+                )
 
                 if (
-                    feature_view.min() < 0
-                    or feature_view.max() > PADDING_INDEX
+                    feature_view.min()
+                    < 0
+                    or
+                    feature_view.max()
+                    > PADDING_INDEX
                 ):
                     raise RuntimeError(
-                        "Invalid feature index detected "
-                        "before CUDA transfer"
+                        "Invalid feature "
+                        "index before "
+                        "CUDA transfer"
                     )
-
-                count_view = batch_counts[
-                    :effective_batch
-                ]
 
                 if (
-                    count_view.min() < 1
-                    or count_view.max() > MAX_STANDARD_PIECES
+                    count_view.min()
+                    < 1
+                    or
+                    count_view.max()
+                    > MAX_STANDARD_PIECES
                 ):
                     raise RuntimeError(
-                        "Invalid piece count detected "
-                        "before CUDA transfer"
+                        "Invalid piece "
+                        "count before "
+                        "CUDA transfer"
                     )
 
-                features_tensor = (
+                feature_tensor = (
                     torch.from_numpy(
-                        batch_features[
-                            :effective_batch
-                        ]
+                        feature_view
                     )
                     .to(
                         device=device,
@@ -1291,11 +1600,9 @@ def main():
                     )
                 )
 
-                counts_tensor = (
+                count_tensor = (
                     torch.from_numpy(
-                        batch_counts[
-                            :effective_batch
-                        ]
+                        count_view
                     )
                     .to(
                         device=device,
@@ -1303,7 +1610,7 @@ def main():
                     )
                 )
 
-                targets_tensor = (
+                target_tensor = (
                     torch.from_numpy(
                         batch_targets[
                             :effective_batch
@@ -1320,13 +1627,13 @@ def main():
                 )
 
                 predictions = model(
-                    features_tensor,
-                    counts_tensor,
+                    feature_tensor,
+                    count_tensor,
                 )
 
                 loss = loss_function(
                     predictions,
-                    targets_tensor,
+                    target_tensor,
                 )
 
                 loss.backward()
@@ -1346,47 +1653,43 @@ def main():
                     effective_batch
                 )
 
-                # Linear learning-rate decay.
-                progress = min(
-                    positions_seen
-                    / max_positions,
-                    1.0,
-                )
-
-                lr_factor = (
-                    1.0
-                    - progress
-                    * (
-                        1.0
-                        - args.end_lr_factor
+                current_lr = (
+                    learning_rate_at_position(
+                        positions_seen,
+                        max_positions,
+                        args.learning_rate,
+                        args.end_lr_factor,
                     )
                 )
 
-                current_lr = (
-                    args.learning_rate
-                    * lr_factor
+                set_optimizer_lr(
+                    optimizer,
+                    current_lr,
                 )
-
-                for group in (
-                    optimizer.param_groups
-                ):
-                    group["lr"] = current_lr
 
                 batch_index = 0
 
-                # ------------------------------------
-                # Periodic logging
-                # ------------------------------------
+                # ------------------------------------------------
+                # Logging
+                # ------------------------------------------------
 
-                if positions_seen >= next_log:
+                if (
+                    positions_seen
+                    >= next_log
+                ):
 
                     elapsed = (
                         time.time()
                         - start_time
                     )
 
-                    throughput = (
+                    session_positions = (
                         positions_seen
+                        - session_start_positions
+                    )
+
+                    throughput = (
+                        session_positions
                         / elapsed
                     )
 
@@ -1434,15 +1737,17 @@ def main():
                             log_every
                         )
 
-                # ------------------------------------
-                # Validation checkpoints
-                # ------------------------------------
+                # ------------------------------------------------
+                # Validation/checkpoints
+                # ------------------------------------------------
 
                 while (
                     remaining_checkpoints
                     and
                     positions_seen
-                    >= remaining_checkpoints[0]
+                    >= remaining_checkpoints[
+                        0
+                    ]
                 ):
 
                     checkpoint_value = (
@@ -1450,17 +1755,14 @@ def main():
                         .pop(0)
                     )
 
-                    metrics = evaluate_model(
-                        model,
-                        validation,
-                        device,
-                        args.scale,
-                        args.validation_batch_size,
-                    )
-
-                    elapsed = (
-                        time.time()
-                        - start_time
+                    checkpoint_metrics = (
+                        evaluate_model(
+                            model,
+                            validation,
+                            device,
+                            args.scale,
+                            args.validation_batch_size,
+                        )
                     )
 
                     result = {
@@ -1469,62 +1771,35 @@ def main():
                         "positions_seen":
                             positions_seen,
                         "elapsed_seconds":
-                            elapsed,
-                        **metrics,
+                            (
+                                time.time()
+                                - start_time
+                            ),
+                        **checkpoint_metrics,
                     }
 
                     print()
+
                     print(
                         f"Checkpoint "
-                        f"{format_position_count(checkpoint_value)}",
-                        flush=True,
+                        f"{format_position_count(checkpoint_value)}"
                     )
 
-                    print(
-                        f"  CP MAE:       "
-                        f"{metrics['cp_mae']:.1f} cp",
-                        flush=True,
-                    )
-
-                    print(
-                        f"  All MAE:      "
-                        f"{metrics['all_mae']:.1f} cp",
-                        flush=True,
-                    )
-
-                    print(
-                        f"  Sign accuracy:"
-                        f" "
-                        f"{100 * metrics['sign_accuracy']:.1f}%",
-                        flush=True,
-                    )
-
-                    print(
-                        f"  Mate sign:    "
-                        f"{100 * metrics['mate_sign_accuracy']:.1f}%",
-                        flush=True,
-                    )
-
-                    print(
-                        f"  Within 50cp:  "
-                        f"{100 * metrics['within_50']:.1f}%",
-                        flush=True,
-                    )
-
-                    print(
-                        f"  Material MAE: "
-                        f"{metrics['material_mae']:.1f} cp",
-                        flush=True,
+                    print_checkpoint_metrics(
+                        checkpoint_metrics
                     )
 
                     print()
 
-                    with results_path.open(
-                        "a"
+                    with (
+                        results_path
+                        .open("a")
                     ) as file:
 
                         file.write(
-                            json.dumps(result)
+                            json.dumps(
+                                result
+                            )
                             + "\n"
                         )
 
@@ -1546,7 +1821,7 @@ def main():
                         optimizer,
                         config,
                         positions_seen,
-                        metrics,
+                        checkpoint_metrics,
                     )
 
                     print(
@@ -1571,16 +1846,19 @@ def main():
     # Final model
     # --------------------------------------------------------
 
-    final_metrics = evaluate_model(
-        model,
-        validation,
-        device,
-        args.scale,
-        args.validation_batch_size,
+    final_metrics = (
+        evaluate_model(
+            model,
+            validation,
+            device,
+            args.scale,
+            args.validation_batch_size,
+        )
     )
 
     final_path = (
-        args.run_dir / "final.pt"
+        args.run_dir
+        / "final.pt"
     )
 
     save_checkpoint(
@@ -1597,10 +1875,29 @@ def main():
         - start_time
     )
 
+    session_positions = (
+        positions_seen
+        - session_start_positions
+    )
+
+    throughput = (
+        session_positions
+        / elapsed
+    )
+
     print()
-    print("=" * 60)
-    print("TRAINING COMPLETE")
-    print("=" * 60)
+
+    print(
+        "=" * 60
+    )
+
+    print(
+        "TRAINING COMPLETE"
+    )
+
+    print(
+        "=" * 60
+    )
 
     print(
         f"Positions seen: "
@@ -1608,17 +1905,23 @@ def main():
     )
 
     print(
-        f"Runtime: "
+        f"This session:   "
+        f"{session_positions:,}"
+    )
+
+    print(
+        f"Runtime:        "
         f"{elapsed / 60:.2f} min"
     )
 
     print(
-        f"Average throughput: "
-        f"{positions_seen / elapsed:,.0f} positions/s"
+        f"Throughput:     "
+        f"{throughput:,.0f} "
+        f"positions/s"
     )
 
     print(
-        f"Final CP MAE: "
+        f"Final CP MAE:   "
         f"{final_metrics['cp_mae']:.1f} cp"
     )
 
