@@ -10,3 +10,7 @@ training/data/raw/
 training/data/*.csv
 training/data/*.parquet
 training/data/*.zst
+
+training/data/samples/
+training/models/
+.venv-gpu/
