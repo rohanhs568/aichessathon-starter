@@ -1,4 +1,4 @@
-"""Chessathon learned-evaluation search agent.
+"""Chessathon learned-evaluation search agent, V1 FastQ.
 
 Search:
     iterative deepening
@@ -656,22 +656,32 @@ def lmr_reduction(depth, move_index):
 
 
 def quiescence(board, alpha, beta, ply):
+    """V1 quiescence with faster tactical move generation.
+
+    Search semantics are intentionally the same as the submitted V1:
+      * if in check, search every legal evasion;
+      * otherwise use stand-pat;
+      * continue through captures and promotions only.
+
+    The optimization is purely in move generation. Quiet qsearch nodes no
+    longer materialize every legal move just to discard the quiet ones.
+    """
     global NODES
 
     NODES += 1
     check_time()
 
-    moves = list(board.legal_moves)
-
-    if not moves:
-        if board.is_check():
-            return -MATE + ply
-        return 0
-
-    if board.halfmove_clock >= 100:
-        return 0
-
     if board.is_check():
+        moves = list(board.legal_moves)
+
+        # Preserve submitted V1 terminal precedence: checkmate is a mate even
+        # when the halfmove clock has reached the draw threshold.
+        if not moves:
+            return -MATE + ply
+
+        if board.halfmove_clock >= 100:
+            return 0
+
         best_score = -INF
         order_move_list(board, moves, None, ply)
 
@@ -691,6 +701,40 @@ def quiescence(board, alpha, beta, ply):
 
         return best_score
 
+    if board.halfmove_clock >= 100:
+        return 0
+
+    # Generate legal captures directly rather than constructing every legal
+    # move at a quiet qsearch node.
+    tactical_moves = list(board.generate_legal_captures())
+
+    # V1 also searched non-capture promotions. They are rare, so only scan
+    # legal moves when a pawn is actually sitting one step from promotion.
+    promotion_rank = 6 if board.turn == chess.WHITE else 1
+    pawns = board.pieces(chess.PAWN, board.turn)
+
+    if any(chess.square_rank(square) == promotion_rank for square in pawns):
+        for move in board.legal_moves:
+            if move.promotion is not None and not board.is_capture(move):
+                tactical_moves.append(move)
+
+    # With no tactical move we still need to distinguish a normal quiet
+    # position from stalemate. any(generate_legal_moves()) normally stops after
+    # the first legal move instead of allocating a full move list.
+    if not tactical_moves:
+        if not any(board.generate_legal_moves()):
+            return 0
+
+        stand_pat = evaluate(board)
+
+        if stand_pat >= beta:
+            return stand_pat
+        if stand_pat > alpha:
+            alpha = stand_pat
+
+        return alpha
+
+    # A tactical move proves this is not stalemate.
     stand_pat = evaluate(board)
 
     if stand_pat >= beta:
@@ -698,11 +742,6 @@ def quiescence(board, alpha, beta, ply):
     if stand_pat > alpha:
         alpha = stand_pat
 
-    tactical_moves = [
-        move
-        for move in moves
-        if board.is_capture(move) or move.promotion is not None
-    ]
     order_move_list(board, tactical_moves, None, ply)
 
     for move in tactical_moves:
