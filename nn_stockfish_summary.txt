@@ -1,0 +1,20 @@
+PGN: nn_vs_stockfish_full.pgn
+Stockfish: /usr/games/stockfish
+Analysis depth: 16
+Games: 6
+
+.
+  analysed moves: 202
+  ACPL: 1011.1
+  inaccuracies >=30cp: 31
+  mistakes >=75cp: 17
+  major mistakes >=150cp: 8
+  blunders >=300cp: 3
+
+baselines/stockfish
+  analysed moves: 205
+  ACPL: 486.2
+  inaccuracies >=30cp: 6
+  mistakes >=75cp: 0
+  major mistakes >=150cp: 1
+  blunders >=300cp: 1

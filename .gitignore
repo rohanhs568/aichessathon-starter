@@ -13,4 +13,5 @@ training/data/*.zst
 
 training/data/samples/
 training/models/
-.venv-gpu/
+.venv-gpu/submission*.zip
+*Zone.Identifier
