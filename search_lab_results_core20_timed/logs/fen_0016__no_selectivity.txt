@@ -1,0 +1,5 @@
+depth=1 score=225 nodes=125 total_nodes=125 time=0.007s
+depth=2 score=123 nodes=633 total_nodes=758 time=0.047s
+depth=3 score=145 nodes=4303 total_nodes=5061 time=0.191s
+depth=4 score=145 nodes=11946 total_nodes=17007 time=0.881s
+playing=d3f5 completed_depth=4 total_nodes=70912 nn=True variant=no_selectivity

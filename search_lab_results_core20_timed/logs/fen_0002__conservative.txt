@@ -1,0 +1,7 @@
+depth=1 score=-85 nodes=63 total_nodes=63 time=0.004s
+depth=2 score=2 nodes=681 total_nodes=744 time=0.050s
+depth=3 score=2 nodes=1797 total_nodes=2541 time=0.088s
+depth=4 score=24 nodes=8798 total_nodes=11339 time=0.636s
+depth=5 score=13 nodes=7656 total_nodes=18995 time=0.434s
+depth=6 score=36 nodes=32053 total_nodes=51048 time=2.120s
+playing=c3a4 completed_depth=6 total_nodes=52224 nn=True variant=conservative

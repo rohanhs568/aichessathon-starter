@@ -1,0 +1,6 @@
+depth=1 score=20 nodes=86 total_nodes=86 time=0.005s
+depth=2 score=35 nodes=424 total_nodes=510 time=0.030s
+depth=3 score=-36 nodes=3826 total_nodes=4336 time=0.202s
+depth=4 score=-36 nodes=10997 total_nodes=15333 time=0.751s
+depth=5 score=-36 nodes=26106 total_nodes=41439 time=1.183s
+playing=b5a4 completed_depth=5 total_nodes=60928 nn=True variant=conservative

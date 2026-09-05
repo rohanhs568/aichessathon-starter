@@ -1,0 +1,5 @@
+depth=1 score=263 nodes=177 total_nodes=177 time=0.010s
+depth=2 score=263 nodes=896 total_nodes=1073 time=0.070s
+depth=3 score=225 nodes=3023 total_nodes=4096 time=0.135s
+depth=4 score=213 nodes=17980 total_nodes=22076 time=1.386s
+playing=c4f7 completed_depth=4 total_nodes=60578 nn=True variant=conservative

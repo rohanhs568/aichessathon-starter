@@ -1,0 +1,6 @@
+depth=1 score=263 nodes=177 total_nodes=177 time=0.010s
+depth=2 score=263 nodes=895 total_nodes=1072 time=0.069s
+depth=3 score=225 nodes=4554 total_nodes=5626 time=0.187s
+depth=4 score=213 nodes=16458 total_nodes=22084 time=1.274s
+depth=5 score=216 nodes=26532 total_nodes=48616 time=1.220s
+playing=c4f7 completed_depth=5 total_nodes=61440 nn=True variant=no_futility

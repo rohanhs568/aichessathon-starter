@@ -1,0 +1,6 @@
+depth=1 score=6 nodes=62 total_nodes=62 time=0.003s
+depth=2 score=15 nodes=199 total_nodes=261 time=0.013s
+depth=3 score=-1 nodes=2518 total_nodes=2779 time=0.150s
+depth=4 score=13 nodes=5154 total_nodes=7933 time=0.384s
+depth=5 score=-10 nodes=13535 total_nodes=21468 time=0.851s
+playing=d6d5 completed_depth=5 total_nodes=53760 nn=True variant=null_safe

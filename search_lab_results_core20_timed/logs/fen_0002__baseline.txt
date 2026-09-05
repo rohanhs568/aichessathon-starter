@@ -1,0 +1,7 @@
+depth=1 score=-85 nodes=63 total_nodes=63 time=0.004s
+depth=2 score=2 nodes=674 total_nodes=737 time=0.051s
+depth=3 score=2 nodes=1367 total_nodes=2104 time=0.067s
+depth=4 score=24 nodes=1989 total_nodes=4093 time=0.149s
+depth=5 score=13 nodes=5519 total_nodes=9612 time=0.336s
+depth=6 score=44 nodes=22353 total_nodes=31965 time=1.710s
+playing=c3a4 completed_depth=6 total_nodes=45398 nn=True variant=baseline

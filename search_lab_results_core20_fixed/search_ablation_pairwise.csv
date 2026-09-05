@@ -1,0 +1,9 @@
+variant,n_pairs,changed_move_pct,improved_exp_gt_0.01,worse_exp_gt_0.01,equal_exp_within_0.01,mean_expectation_loss_delta,exp_delta_ci95_lo,exp_delta_ci95_hi,mean_cp_loss_delta,cp_delta_ci95_lo,cp_delta_ci95_hi,rescued_150cp_blunders,introduced_150cp_blunders
+no_null,20,5.0,0,1,19,0.01125,0.0,0.033749999999999995,3.55,0.0,10.65,0,0
+null_safe,20,0.0,0,0,20,0.0,0.0,0.0,0.0,0.0,0.0,0,0
+null_no_endgame,20,0.0,0,0,20,0.0,0.0,0.0,0.0,0.0,0.0,0,0
+no_lmr,20,10.0,1,1,18,-2.4999999999997247e-05,-0.0025500000000000024,0.0024750000000000106,-0.15,-4.5,4.05,0,0
+lmr_safe,20,5.0,0,1,19,0.021475,0.0,0.064425,5.75,0.0,17.25,0,1
+no_futility,20,0.0,0,0,20,0.0,0.0,0.0,0.0,0.0,0.0,0,0
+no_selectivity,20,10.0,1,1,18,-2.4999999999997247e-05,-0.0025500000000000024,0.0024750000000000106,-0.15,-4.5,4.05,0,0
+conservative,20,5.0,0,1,19,0.021475,0.0,0.064425,5.75,0.0,17.25,0,1

@@ -1,0 +1,6 @@
+depth=1 score=20 nodes=86 total_nodes=86 time=0.005s
+depth=2 score=35 nodes=424 total_nodes=510 time=0.034s
+depth=3 score=-36 nodes=3397 total_nodes=3907 time=0.208s
+depth=4 score=-36 nodes=7232 total_nodes=11139 time=0.540s
+depth=5 score=-36 nodes=7666 total_nodes=18805 time=0.384s
+playing=b5a4 completed_depth=5 total_nodes=50432 nn=True variant=baseline

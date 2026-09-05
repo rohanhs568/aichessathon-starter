@@ -1,0 +1,6 @@
+depth=1 score=33 nodes=184 total_nodes=184 time=0.010s
+depth=2 score=59 nodes=490 total_nodes=674 time=0.035s
+depth=3 score=54 nodes=2575 total_nodes=3249 time=0.138s
+depth=4 score=64 nodes=19678 total_nodes=22927 time=1.265s
+depth=5 score=59 nodes=5343 total_nodes=28270 time=0.285s
+playing=c1g5 completed_depth=5 total_nodes=53760 nn=True variant=null_safe

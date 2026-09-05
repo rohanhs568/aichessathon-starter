@@ -1,0 +1,5 @@
+depth=1 score=-54 nodes=96 total_nodes=96
+depth=2 score=-39 nodes=250 total_nodes=346
+depth=3 score=-68 nodes=1885 total_nodes=2231
+depth=4 score=-62 nodes=5289 total_nodes=7520
+depth=5 score=-80 nodes=20994 total_nodes=28514

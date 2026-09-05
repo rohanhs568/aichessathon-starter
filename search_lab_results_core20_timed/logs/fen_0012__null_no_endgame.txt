@@ -1,0 +1,7 @@
+depth=1 score=-54 nodes=96 total_nodes=96 time=0.006s
+depth=2 score=-39 nodes=250 total_nodes=346 time=0.019s
+depth=3 score=-68 nodes=1885 total_nodes=2231 time=0.115s
+depth=4 score=-62 nodes=4623 total_nodes=6854 time=0.360s
+depth=5 score=-80 nodes=11105 total_nodes=17959 time=0.655s
+depth=6 score=-62 nodes=28303 total_nodes=46262 time=1.933s
+playing=e4d5 completed_depth=6 total_nodes=50688 nn=True variant=null_no_endgame

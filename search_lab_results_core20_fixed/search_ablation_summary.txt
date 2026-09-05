@@ -1,0 +1,31 @@
+SEARCH ABLATION SUMMARY
+========================================================================
+cases: 20
+mode: fixed-depth
+agent time_left_ms: 120000
+agent fixed depth: 5
+Stockfish depth: 18
+
+Primary ranking: lower Stockfish WDL expectation loss is better.
+CP loss is secondary and capped at 1000 cp in the mean.
+
+ 1. no_lmr                   exp_loss=0.0194 cp_loss=15.9 median=0.0 >=300=0.0% depth=5.00 nodes=47267
+ 2. no_selectivity           exp_loss=0.0194 cp_loss=15.9 median=0.0 >=300=0.0% depth=5.00 nodes=98902
+ 3. baseline                 exp_loss=0.0195 cp_loss=16.1 median=0.0 >=300=0.0% depth=5.00 nodes=23297
+ 4. null_safe                exp_loss=0.0195 cp_loss=16.1 median=0.0 >=300=0.0% depth=5.00 nodes=26851
+ 5. null_no_endgame          exp_loss=0.0195 cp_loss=16.1 median=0.0 >=300=0.0% depth=5.00 nodes=23297
+ 6. no_futility              exp_loss=0.0195 cp_loss=16.1 median=0.0 >=300=0.0% depth=5.00 nodes=27022
+ 7. no_null                  exp_loss=0.0307 cp_loss=19.6 median=0.0 >=300=0.0% depth=5.00 nodes=29417
+ 8. lmr_safe                 exp_loss=0.0409 cp_loss=21.9 median=0.0 >=300=0.0% depth=5.00 nodes=38922
+ 9. conservative             exp_loss=0.0409 cp_loss=21.9 median=0.0 >=300=0.0% depth=5.00 nodes=54425
+
+PAIRED VS BASELINE
+Positive delta = variant worse; negative delta = variant better.
+no_null                  dExp=+0.0112 95%CI=[+0.0000,+0.0337] dCP=+3.5 changed=5.0% rescued=0 new_blunders=0
+null_safe                dExp=+0.0000 95%CI=[+0.0000,+0.0000] dCP=+0.0 changed=0.0% rescued=0 new_blunders=0
+null_no_endgame          dExp=+0.0000 95%CI=[+0.0000,+0.0000] dCP=+0.0 changed=0.0% rescued=0 new_blunders=0
+no_lmr                   dExp=-0.0000 95%CI=[-0.0026,+0.0025] dCP=-0.1 changed=10.0% rescued=0 new_blunders=0
+lmr_safe                 dExp=+0.0215 95%CI=[+0.0000,+0.0644] dCP=+5.8 changed=5.0% rescued=0 new_blunders=1
+no_futility              dExp=+0.0000 95%CI=[+0.0000,+0.0000] dCP=+0.0 changed=0.0% rescued=0 new_blunders=0
+no_selectivity           dExp=-0.0000 95%CI=[-0.0026,+0.0025] dCP=-0.1 changed=10.0% rescued=0 new_blunders=0
+conservative             dExp=+0.0215 95%CI=[+0.0000,+0.0644] dCP=+5.8 changed=5.0% rescued=0 new_blunders=1

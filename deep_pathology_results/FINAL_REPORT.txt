@@ -1,0 +1,84 @@
+DEEP SEARCH PATHOLOGY REPORT
+========================================================================================
+wall budget: 4.50 h
+actual elapsed: 1.19 h
+stopped early by budget: False
+position pool: 695
+discovery positions completed: 695
+pathology/tail set: 18
+deep ablation rows: 1491
+attributed cases: 18
+timed retest rows: 38
+
+METRIC DEFINITION
+----------------------------------------------------------------------------------------
+Primary = Stockfish WDL expectation loss from the root player's POV.
+Secondary = root-player CP loss; mate is mapped to a large CP surrogate only for diagnostics.
+Every candidate is evaluated on the ORIGINAL root with root_moves=[candidate].
+
+ATTRIBUTION COUNTS
+----------------------------------------------------------------------------------------
+ 10  unresolved_mixed_or_depth
+  4  depth_horizon
+  2  single:no_lmr
+  1  evaluator_static_suspect
+  1  interaction:no_null_no_lmr
+
+CASE-BY-CASE
+----------------------------------------------------------------------------------------
+validation_0162: unresolved_mixed_or_depth (low) | base d5d6 loss=965cp/1.000 WDL | SF d5c5
+validation_0286: depth_horizon (medium) | base c1c5 loss=600cp/1.000 WDL | SF d5b6
+    deeper baseline itself rescues the position
+    qsearch prefers bad move by 149 cp
+validation_0210: unresolved_mixed_or_depth (low) | base d2f2 loss=622cp/0.999 WDL | SF a5c3
+validation_0370: unresolved_mixed_or_depth (low) | base c5b4 loss=481cp/0.839 WDL | SF e6h3
+validation_0314: depth_horizon (medium) | base g7h8 loss=228cp/0.587 WDL | SF g7h7
+    deeper baseline itself rescues the position
+validation_0384: unresolved_mixed_or_depth (low) | base g5f7 loss=307cp/0.551 WDL | SF g4h6
+pgn_nn_vs_stockfish_2000_g7_p39: single:no_lmr (high) | base f4f5 loss=243cp/0.502 WDL | SF e1e4
+    single rescues: no_lmr
+    pair rescues:   no_null_no_lmr;no_lmr_no_futility
+    deeper baseline itself rescues the position
+validation_0073: unresolved_mixed_or_depth (low) | base e4f3 loss=531cp/0.500 WDL | SF e4f5
+pgn_v1_1_vs_v1_g11_p9: unresolved_mixed_or_depth (low) | base e4b1 loss=279cp/0.498 WDL | SF e4g2
+validation_0247: single:no_lmr (high) | base d5f3 loss=177cp/0.493 WDL | SF d5d6
+    single rescues: no_lmr;no_pvs
+    pair rescues:   no_null_no_lmr;no_lmr_no_futility
+validation_0176: unresolved_mixed_or_depth (low) | base a8a6 loss=237cp/0.414 WDL | SF c3d5
+validation_0311: unresolved_mixed_or_depth (low) | base f6e4 loss=118cp/0.403 WDL | SF a5a4
+validation_0392: unresolved_mixed_or_depth (low) | base h7h5 loss=111cp/0.402 WDL | SF h7h6
+pgn_nn_vs_material_g12_p24: depth_horizon (medium) | base h4h5 loss=250cp/0.393 WDL | SF h4f6
+    deeper baseline itself rescues the position
+    NN static prefers bad move by 187 cp
+    qsearch prefers bad move by 249 cp
+pgn_v1_1_vs_v1_g12_p5: interaction:no_null_no_lmr (medium) | base d1c2 loss=318cp/0.393 WDL | SF d1f3
+    pair rescues:   no_null_no_lmr
+pgn_nn_vs_stockfish_2000_g9_p45: unresolved_mixed_or_depth (low) | base a1d1 loss=85cp/0.322 WDL | SF g5f4
+validation_0106: depth_horizon (medium) | base b5e8 loss=83cp/0.136 WDL | SF b5e2
+    deeper baseline itself rescues the position
+validation_0249: evaluator_static_suspect (medium) | base e7f6 loss=99184cp/0.000 WDL | SF c7d8
+    NN static prefers bad move by 204 cp
+    qsearch prefers bad move by 279 cp
+
+INTERPRETATION RULES
+----------------------------------------------------------------------------------------
+single:X = removing X at the SAME depth materially rescues Stockfish move quality.
+interaction:A_B = singles did not rescue, but removing A+B together did.
+selectivity:higher_order = only broad selectivity removal rescued at same depth.
+depth_horizon = ordinary baseline gets materially better when searched deeper.
+evaluator_static_suspect = the one-ply NN itself ranks the bad move >=100cp above SF best.
+qsearch_horizon_suspect = static NN does not, but current qsearch does.
+unresolved = no tested mechanism cleanly explains the failure; inspect its depth/PV trace.
+
+FILES
+----------------------------------------------------------------------------------------
+00_position_pool.csv
+01_discovery_all.csv
+02_timed_confirmation_all.csv
+03_pathology_set.csv
+03_pathology_fens.txt
+04_deep_ablation_raw.csv
+05_static_qsearch_diagnostics.csv
+06_attribution.csv
+07_timed_attribution_retest.csv
+stockfish_cache.json

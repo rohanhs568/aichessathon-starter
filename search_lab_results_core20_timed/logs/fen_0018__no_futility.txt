@@ -1,0 +1,6 @@
+depth=1 score=103 nodes=126 total_nodes=126 time=0.008s
+depth=2 score=77 nodes=505 total_nodes=631 time=0.032s
+depth=3 score=53 nodes=2949 total_nodes=3580 time=0.150s
+depth=4 score=54 nodes=8550 total_nodes=12130 time=0.624s
+depth=5 score=58 nodes=20208 total_nodes=32338 time=1.026s
+playing=c1g5 completed_depth=5 total_nodes=60416 nn=True variant=no_futility

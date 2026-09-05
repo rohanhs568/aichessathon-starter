@@ -1,0 +1,6 @@
+depth=1 score=33 nodes=184 total_nodes=184 time=0.013s
+depth=2 score=59 nodes=427 total_nodes=611 time=0.034s
+depth=3 score=54 nodes=2706 total_nodes=3317 time=0.163s
+depth=4 score=64 nodes=17619 total_nodes=20936 time=1.380s
+depth=5 score=59 nodes=10581 total_nodes=31517 time=0.646s
+playing=c1g5 completed_depth=5 total_nodes=51712 nn=True variant=conservative

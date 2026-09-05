@@ -1,0 +1,5 @@
+depth=1 score=20 nodes=86 total_nodes=86 time=0.005s
+depth=2 score=35 nodes=424 total_nodes=510 time=0.039s
+depth=3 score=-36 nodes=3903 total_nodes=4413 time=0.248s
+depth=4 score=-36 nodes=10899 total_nodes=15312 time=0.835s
+playing=b5a4 completed_depth=4 total_nodes=65792 nn=True variant=no_selectivity

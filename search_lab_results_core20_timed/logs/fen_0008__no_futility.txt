@@ -1,0 +1,7 @@
+depth=1 score=-6 nodes=94 total_nodes=94 time=0.004s
+depth=2 score=-1 nodes=462 total_nodes=556 time=0.032s
+depth=3 score=-29 nodes=3828 total_nodes=4384 time=0.179s
+depth=4 score=9 nodes=2858 total_nodes=7242 time=0.200s
+depth=5 score=-19 nodes=19677 total_nodes=26919 time=1.129s
+depth=6 score=11 nodes=32612 total_nodes=59531 time=1.647s
+playing=e5g7 completed_depth=6 total_nodes=63744 nn=True variant=no_futility

@@ -1,0 +1,6 @@
+depth=1 score=18 nodes=223 total_nodes=223 time=0.013s
+depth=2 score=35 nodes=1149 total_nodes=1372 time=0.076s
+depth=3 score=30 nodes=6751 total_nodes=8123 time=0.391s
+depth=4 score=48 nodes=14263 total_nodes=22386 time=1.021s
+depth=5 score=48 nodes=12143 total_nodes=34529 time=0.634s
+playing=c8g4 completed_depth=5 total_nodes=53248 nn=True variant=null_no_endgame

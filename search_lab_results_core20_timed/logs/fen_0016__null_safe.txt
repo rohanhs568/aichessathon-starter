@@ -1,0 +1,6 @@
+depth=1 score=225 nodes=125 total_nodes=125 time=0.007s
+depth=2 score=123 nodes=581 total_nodes=706 time=0.041s
+depth=3 score=145 nodes=3397 total_nodes=4103 time=0.167s
+depth=4 score=195 nodes=11971 total_nodes=16074 time=0.897s
+depth=5 score=137 nodes=22790 total_nodes=38864 time=1.348s
+playing=d3f5 completed_depth=5 total_nodes=52480 nn=True variant=null_safe

@@ -1,0 +1,6 @@
+depth=1 score=7 nodes=237 total_nodes=237 time=0.016s
+depth=2 score=17 nodes=832 total_nodes=1069 time=0.047s
+depth=3 score=17 nodes=1301 total_nodes=2370 time=0.072s
+depth=4 score=29 nodes=7235 total_nodes=9605 time=0.480s
+depth=5 score=6 nodes=21133 total_nodes=30738 time=1.258s
+playing=c1a3 completed_depth=5 total_nodes=52169 nn=True variant=lmr_safe

@@ -1,0 +1,6 @@
+depth=1 score=-141 nodes=87 total_nodes=87 time=0.005s
+depth=2 score=-141 nodes=282 total_nodes=369 time=0.019s
+depth=3 score=-102 nodes=1725 total_nodes=2094 time=0.097s
+depth=4 score=-76 nodes=8445 total_nodes=10539 time=0.538s
+depth=5 score=-35 nodes=7851 total_nodes=18390 time=0.384s
+playing=d3f5 completed_depth=5 total_nodes=58488 nn=True variant=conservative

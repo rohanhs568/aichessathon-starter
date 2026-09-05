@@ -18,6 +18,7 @@ rm -f "$LOG"
 echo "=== CUDA capability check ==="
 
 "$GPU_PY" - <<'PY'
+import re
 import torch
 
 print("torch:", torch.__version__)
@@ -27,28 +28,51 @@ print("cuda available:", torch.cuda.is_available())
 if not torch.cuda.is_available():
     raise SystemExit("CUDA unavailable")
 
-print("GPU:", torch.cuda.get_device_name(0))
-print("capability:", torch.cuda.get_device_capability(0))
-print("wheel arch list:", torch.cuda.get_arch_list())
-
+name = torch.cuda.get_device_name(0)
 major, minor = torch.cuda.get_device_capability(0)
-wanted = f"sm_{major}{minor}"
+arch_list = torch.cuda.get_arch_list()
 
-if wanted not in torch.cuda.get_arch_list():
+print("GPU:", name)
+print("capability:", (major, minor))
+print("wheel arch list:", arch_list)
+
+# CUDA cubins are binary-compatible within the same compute-capability major
+# version when the GPU minor version is >= the cubin minor version.
+# Therefore a 6.1 GPU can run an sm_60 cubin.
+compatible_native = []
+
+for arch in arch_list:
+    match = re.fullmatch(r"sm_(\d)(\d)", arch)
+    if not match:
+        continue
+
+    arch_major = int(match.group(1))
+    arch_minor = int(match.group(2))
+
+    if arch_major == major and arch_minor <= minor:
+        compatible_native.append((arch_major, arch_minor, arch))
+
+if not compatible_native:
     raise SystemExit(
-        f"PyTorch wheel does not contain native support for {wanted}"
+        f"No compatible native cubin found for compute capability "
+        f"{major}.{minor}"
     )
 
-# Basic allocation/kernel/synchronization loop.
+best = max(compatible_native)
+print("compatible native cubin:", best[2])
+
+# Basic real CUDA allocation/kernel/backprop/synchronization stress.
 x = torch.randn(4096, 256, device="cuda")
 w = torch.randn(256, 64, device="cuda", requires_grad=True)
 
-for i in range(200):
+for i in range(300):
     y = (x @ w).square().mean()
     y.backward()
+
     with torch.no_grad():
         w -= 1e-5 * w.grad
         w.grad = None
+
     if i % 20 == 0:
         torch.cuda.synchronize()
 
@@ -84,13 +108,10 @@ if [[ $status -ne 0 ]]; then
   exit "$status"
 fi
 
-if ! grep -q "Final validation" "$LOG" && ! grep -q "Saved final model" "$LOG"; then
-  # train_v1 versions differ slightly in the final message. A final.pt is the
-  # definitive success condition.
-  if [[ ! -f "$RUN_DIR/final.pt" ]]; then
-    echo "GPU V1 preflight did not create final.pt"
-    exit 3
-  fi
+if [[ ! -f "$RUN_DIR/final.pt" ]]; then
+  echo
+  echo "GPU V1 preflight did not create $RUN_DIR/final.pt"
+  exit 3
 fi
 
 echo
