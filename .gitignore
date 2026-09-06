@@ -16,3 +16,20 @@ training/models/
 .venv-gpu/submission*.zip
 *Zone.Identifier
 *.identifier
+
+# Local experiment / deployment artifacts
+candidate_backups/
+baselines/v1_4b_pre_fastasp/
+baselines/v17_candidate/
+.candidate_last_backup
+
+*.log
+*.pid
+
+submission*.zip
+chessathon_*.zip
+
+v17_one_shot/
+v17_one_shot_results.json
+
+cp_tanh_diagnostics/
