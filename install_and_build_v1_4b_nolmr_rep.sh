@@ -91,10 +91,10 @@ echo "[3/7] PyTorch/export/runtime equivalence + legal-move smoke"
 "${PY[@]}" training/verify_v1_agent.py --checkpoint "$CKPT" --positions 250
 
 echo "[4/7] Fundamental capture sanity"
-"${PY[@]}" training/verify_candidate_capture.py
+"${PY[@]}" -m training.verify_candidate_capture
 
 echo "[5/7] Exact threefold protocol/history test"
-"${PY[@]}" training/test_candidate_repetition.py
+"${PY[@]}" -m training.test_candidate_repetition
 
 echo "[6/7] Short harness smoke vs random"
 "${PY[@]}" -m harness.play --white . --black baselines/random --base-ms 5000 --ply-cap 80

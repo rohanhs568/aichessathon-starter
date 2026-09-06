@@ -1,81 +1,113 @@
-# AI Chessathon starter
+# V1.6 blunder fix
 
-Fork this to build an agent for [AI Chessathon](https://aichessathon.com). It gives you a working
-submission, baselines to beat, and a local harness that speaks the same protocol and enforces the
-same clock as the platform, so you can see whether a change actually helped before you upload it.
+This bundle addresses the two mechanisms that actually showed up in profiling.
 
-```
-git clone https://github.com/advitrocks9/aichessathon-starter
-cd aichessathon-starter
-make setup
-make play
-```
+## 1. Robust fail-low handling
 
-That plays your agent against a baseline over a full 120 s + 0.5 s game and prints the result.
-When you like it, `make zip` and drop `submission.zip` on your dashboard.
+The local V1.5 already has:
+- fast cache keys;
+- aspiration widened to 160;
+- panic time on fail-low.
 
-## Writing an agent
+V1.6 makes the fail-low path more decisive:
 
-`agent.py` is the whole submission. One function:
-
-```python
-def get_move(fen: str, time_left_ms: int) -> str:
-    return "e2e4"
+```text
+completed fail-low
+    -> old PV has been disproved at this depth
+    -> activate panic time
+    -> immediately re-search this depth with a full root window
 ```
 
-The fork ships a legal random-mover, so the loop works before you write anything. Replace the body.
+It no longer burns time on 160 -> 320 -> 640 -> ... low-window retries.
 
-```
-make play                                          # one game, real time control
-make arena                                         # 20 fast games, prints a score
-make play FEN="<fen>"                              # start from a given position
-uv run python -m harness.play --black baselines/minimax --pgn game.pgn
-uv run python -m harness.arena --opponent ../my-old-version --games 200
-```
+Apply:
 
-Anything your agent writes to stdout or stderr shows up under the result, so `print` debugging
-works. The platform discards it during rated games and shows it in your validation log.
-
-## The ladder
-
-Measured with `harness/arena.py`. Beating greedy is a search. Beating minimax is a search plus an
-evaluation worth searching with.
-
-| Matchup | Games | Time control | Score |
-|---|---|---|---|
-| random vs greedy | 20 | 10 s + 0.1 s | 10.0% (+1 =2 -17) |
-| greedy vs minimax | 6 | 120 s + 0.5 s | 0.0% (+0 =0 -6) |
-| numba vs minimax | 6 | 10 s + 0.5 s | 66.7% (+2 =4 -0) |
-
-- `baselines/random` plays a uniformly random legal move. It is what `agent.py` starts as.
-- `baselines/greedy` searches one ply on material.
-- `baselines/minimax` searches two plies on material and mobility, with no time management.
-- `baselines/numba` is `minimax` with the evaluation jitted. It is barely stronger, which is
-  the point: jitting a shallow search buys headroom, not depth. Read it for the warm-up call
-  at the bottom, which is how you keep compilation off your clock.
-
-## What's here
-
-```
-agent.py             your submission
-baselines/           random, greedy, minimax, numba; each is a directory with an agent.py
-harness/runner.py    the process the platform runs your agent in
-harness/referee.py   the clock, legality, draw and adjudication rules
-harness/rules.py     the event constants the harness enforces
-harness/sandbox.py   the one process, spoken to as the platform speaks to a container
-harness/play.py      one game between two agent directories
-harness/arena.py     many games, with a score
-harness/package.py   builds submission.zip with agent.py at the root
-docs/IDEAS.md        where the strength actually comes from
+```bash
+.venv/bin/python tools/apply_v16_blunder_fix.py
+.venv/bin/python -m training.verify_candidate_capture
+.venv/bin/python -m training.test_candidate_repetition
 ```
 
-Local games start from the normal position unless you pass `--fen`. Rated games start from
-curated neutral positions.
+## 2. Fix the evaluator objective that creates arbitrary material sacrifices
 
-The harness is here so your games are honest, not so you can pre-validate an upload. Acceptance
-happens on the platform, and the validation log on your dashboard is the authority on it.
+The current V1 parameters were trained with:
 
-## The rules
+```text
+prediction = tanh(raw)
+target     = tanh(cp / K)
+MSE loss
+```
 
-[aichessathon.com/docs](https://aichessathon.com/docs) is canonical and changes. Read it before
-you upload.
+but tournament search uses:
+
+```text
+score = raw * K
+```
+
+V1.6 keeps the exact same 50k-parameter network and starts from the 1.4b
+checkpoint, but directly trains the runtime quantity:
+
+```text
+prediction = raw
+target     = clip(cp, -2000, 2000) / 400
+loss       = Huber(beta = 200cp)
+```
+
+This removes the final tanh gradient saturation from recalibration. The tensor
+names and architecture are unchanged, so the existing NPZ exporter and runtime
+remain compatible.
+
+Start a 100m-position recalibration:
+
+```bash
+chmod +x start_v16_recalibration.sh \
+  inspect_v16_recalibration.sh \
+  install_linear_checkpoint.sh
+
+./start_v16_recalibration.sh
+```
+
+Watch:
+
+```bash
+tail -f v1_linear_huber_100m.log
+```
+
+Checkpoints are written at 25m / 50m / 75m / 100m.
+
+Compare the legacy 1.4b network to every available linear checkpoint:
+
+```bash
+./inspect_v16_recalibration.sh
+```
+
+The diagnostic prints:
+- clipped CP MAE;
+- balanced and medium CP MAE;
+- sign accuracy;
+- calibration slope on |teacher| <= 1000cp;
+- correlation;
+- residual standard deviation;
+- median implied pawn/knight/bishop/rook/queen values;
+- rook/bishop ratio.
+
+The important gates are not just MAE. We want:
+- calibration slope materially closer to 1;
+- lower residual noise;
+- rook/bishop no longer near ~1.1;
+- no meaningful collapse in sign accuracy.
+
+When one checkpoint is clearly better, install it:
+
+```bash
+./install_linear_checkpoint.sh \
+  training/models/v1_linear_huber_100m/checkpoint_linear_50m.pt
+```
+
+That script exports to a temporary NPZ and verifies the raw PyTorch output
+against NPZ runtime arithmetic before replacing `weights/v1.npz`.
+
+## Not mixed into this change
+
+No SEE, check extension, material blend, LMR, root hysteresis, or incomplete
+root-iteration commit. Those remain separate after the evaluator is calibrated.

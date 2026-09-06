@@ -1,0 +1,21 @@
+
+==================================================================================
+V1 SEE-QUIESCENCE A/B
+==================================================================================
+Positions: 60
+Candidate clock input: 5000 ms
+Stockfish analysis depth: 13
+SEE prune threshold: < -100 cp
+
+engine             mean   median    <30cp     >=75    >=300    avg nodes
+----------------------------------------------------------------------------------
+submitted_v1      49.8     9.0    66.7%    18.3%     3.3%        6,051
+see_qsearch       60.8    10.0    65.0%    23.3%     5.0%        4,856
+
+Different root moves: 5/60
+SEE candidate lower Stockfish loss: 0
+Submitted V1 lower Stockfish loss: 4
+Equal loss: 56
+
+This experiment changes quiescence capture handling only.
+CSV: qsearch_see_ab.csv

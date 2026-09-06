@@ -1,0 +1,20 @@
+
+==============================================================================
+V1 QUIESCENCE A/B
+==============================================================================
+Positions: 60
+Candidate clock input: 5000 ms
+Stockfish analysis depth: 13
+
+engine             mean   median    <30cp     >=75    >=300    avg nodes
+------------------------------------------------------------------------------
+submitted_v1      42.0     8.0    75.0%    13.3%     3.3%        6,025
+qsearch_v2        58.2     9.0    70.0%    15.0%     6.7%        4,538
+
+Different root moves: 12/60
+QSearch V2 lower Stockfish loss: 16
+Submitted V1 lower Stockfish loss: 21
+Equal loss: 23
+
+This experiment changes quiescence only.
+CSV: qsearch_v2_ab.csv

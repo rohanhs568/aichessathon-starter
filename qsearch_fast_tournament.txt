@@ -1,0 +1,21 @@
+
+==============================================================================================
+V1 FAST-QUIESCENCE A/B
+==============================================================================================
+Positions: 20
+Clock input: 120000 ms
+Stockfish depth: 13
+
+engine             mean   median    <30cp     >=75    >=300    avg nodes   avg wall
+----------------------------------------------------------------------------------------------
+submitted_v1      26.2    13.0    55.0%    10.0%     0.0%       44,528     3.409s
+fast_qsearch      26.2    13.0    55.0%    10.0%     0.0%       53,097     3.408s
+
+Average node change: +19.2%
+Different root moves: 0/20
+Fast qsearch lower Stockfish loss: 0
+Submitted V1 lower Stockfish loss: 0
+Equal loss: 20
+
+This experiment changes qsearch implementation efficiency only.
+CSV: qsearch_fast_tournament.csv

@@ -1,0 +1,169 @@
+============================================================
+1. FULL DATA AUDIT
+============================================================
+Stockfish/Lichess corpus
+-----------------------
+shards: 402
+compressed size: 7.77 GiB
+sample parse: 4,000 rows, 0 bad
+validation: 250,000 rows, 249,949 encoded, 51 rejected
+Running full zstd integrity test...
+  zstd integrity: 25/402
+  zstd integrity: 50/402
+  zstd integrity: 75/402
+  zstd integrity: 100/402
+  zstd integrity: 125/402
+  zstd integrity: 150/402
+  zstd integrity: 175/402
+  zstd integrity: 200/402
+  zstd integrity: 225/402
+  zstd integrity: 250/402
+  zstd integrity: 275/402
+  zstd integrity: 300/402
+  zstd integrity: 325/402
+  zstd integrity: 350/402
+  zstd integrity: 375/402
+  zstd integrity: 400/402
+  zstd integrity: 402/402
+zstd failures: 0
+
+LC0 corpus
+----------
+  LC0 inventory 1/120: 9,194,410 records in 88,564 chunks
+  LC0 inventory 2/120: 9,464,803 records in 90,979 chunks
+  LC0 inventory 3/120: 9,225,456 records in 87,130 chunks
+  LC0 inventory 4/120: 9,230,383 records in 87,926 chunks
+  LC0 inventory 5/120: 9,016,175 records in 85,865 chunks
+  LC0 inventory 6/120: 9,543,182 records in 91,063 chunks
+  LC0 inventory 7/120: 9,329,189 records in 89,132 chunks
+  LC0 inventory 8/120: 9,336,666 records in 88,337 chunks
+  LC0 inventory 9/120: 9,745,114 records in 93,019 chunks
+  LC0 inventory 10/120: 10,404,136 records in 97,587 chunks
+  LC0 inventory 11/120: 9,959,234 records in 94,247 chunks
+  LC0 inventory 12/120: 9,657,373 records in 90,838 chunks
+  LC0 inventory 13/120: 9,562,990 records in 90,068 chunks
+  LC0 inventory 14/120: 9,033,531 records in 84,840 chunks
+  LC0 inventory 15/120: 10,074,775 records in 95,886 chunks
+  LC0 inventory 16/120: 9,786,558 records in 93,551 chunks
+  LC0 inventory 17/120: 10,481,438 records in 99,567 chunks
+  LC0 inventory 18/120: 10,047,561 records in 94,767 chunks
+  LC0 inventory 19/120: 9,420,294 records in 89,254 chunks
+  LC0 inventory 20/120: 9,616,038 records in 90,361 chunks
+  LC0 inventory 21/120: 9,420,171 records in 88,617 chunks
+  LC0 inventory 22/120: 9,395,849 records in 87,679 chunks
+  LC0 inventory 23/120: 9,683,403 records in 90,866 chunks
+  LC0 inventory 24/120: 9,965,314 records in 93,463 chunks
+  LC0 inventory 25/120: 8,922,942 records in 83,335 chunks
+  LC0 inventory 26/120: 10,217,845 records in 94,841 chunks
+  LC0 inventory 27/120: 10,274,703 records in 96,245 chunks
+  LC0 inventory 28/120: 9,761,827 records in 91,582 chunks
+  LC0 inventory 29/120: 10,156,555 records in 94,816 chunks
+  LC0 inventory 30/120: 9,605,147 records in 89,299 chunks
+  LC0 inventory 31/120: 9,738,385 records in 90,746 chunks
+  LC0 inventory 32/120: 9,899,092 records in 92,637 chunks
+  LC0 inventory 33/120: 8,116,766 records in 75,086 chunks
+  LC0 inventory 34/120: 9,160,752 records in 85,785 chunks
+  LC0 inventory 35/120: 10,478,712 records in 97,554 chunks
+  LC0 inventory 36/120: 10,644,361 records in 99,446 chunks
+  LC0 inventory 37/120: 10,825,310 records in 101,017 chunks
+  LC0 inventory 38/120: 8,683,572 records in 80,570 chunks
+  LC0 inventory 39/120: 8,833,825 records in 81,923 chunks
+  LC0 inventory 40/120: 9,195,013 records in 85,211 chunks
+  LC0 inventory 41/120: 7,686,207 records in 71,316 chunks
+  LC0 inventory 42/120: 10,732,671 records in 99,667 chunks
+  LC0 inventory 43/120: 9,088,728 records in 84,220 chunks
+  LC0 inventory 44/120: 9,069,531 records in 84,469 chunks
+  LC0 inventory 45/120: 10,206,537 records in 94,338 chunks
+  LC0 inventory 46/120: 10,298,818 records in 95,835 chunks
+  LC0 inventory 47/120: 9,636,290 records in 89,023 chunks
+  LC0 inventory 48/120: 9,218,383 records in 85,474 chunks
+  LC0 inventory 49/120: 18,066 records in 157 chunks
+  LC0 inventory 50/120: 10,135,566 records in 94,052 chunks
+  LC0 inventory 51/120: 9,544,277 records in 88,118 chunks
+  LC0 inventory 52/120: 9,441,534 records in 87,398 chunks
+  LC0 inventory 53/120: 10,166,955 records in 94,625 chunks
+  LC0 inventory 54/120: 9,549,612 records in 88,421 chunks
+  LC0 inventory 55/120: 9,213,636 records in 85,734 chunks
+  LC0 inventory 56/120: 9,141,429 records in 84,625 chunks
+  LC0 inventory 57/120: 9,928,756 records in 91,923 chunks
+  LC0 inventory 58/120: 9,591,314 records in 88,829 chunks
+  LC0 inventory 59/120: 8,746,460 records in 81,228 chunks
+  LC0 inventory 60/120: 9,496,406 records in 88,446 chunks
+  LC0 inventory 61/120: 8,482,837 records in 78,820 chunks
+  LC0 inventory 62/120: 7,932,249 records in 73,641 chunks
+  LC0 inventory 63/120: 9,272,689 records in 86,384 chunks
+  LC0 inventory 64/120: 8,439,114 records in 78,216 chunks
+  LC0 inventory 65/120: 8,298,181 records in 77,167 chunks
+  LC0 inventory 66/120: 8,248,830 records in 76,655 chunks
+  LC0 inventory 67/120: 8,357,129 records in 77,339 chunks
+  LC0 inventory 68/120: 8,492,930 records in 78,691 chunks
+  LC0 inventory 69/120: 6,578,574 records in 61,351 chunks
+  LC0 inventory 70/120: 6,532,688 records in 60,789 chunks
+  LC0 inventory 71/120: 6,506,302 records in 60,314 chunks
+  LC0 inventory 72/120: 6,767,527 records in 62,316 chunks
+  LC0 inventory 73/120: 6,656,151 records in 61,398 chunks
+  LC0 inventory 74/120: 6,595,449 records in 61,065 chunks
+  LC0 inventory 75/120: 6,088,544 records in 56,247 chunks
+  LC0 inventory 76/120: 6,563,713 records in 60,825 chunks
+  LC0 inventory 77/120: 6,538,307 records in 60,578 chunks
+  LC0 inventory 78/120: 6,608,563 records in 61,116 chunks
+  LC0 inventory 79/120: 169,513 records in 1,578 chunks
+  LC0 inventory 80/120: 6,756,480 records in 62,686 chunks
+  LC0 inventory 81/120: 6,543,491 records in 60,743 chunks
+  LC0 inventory 82/120: 6,748,773 records in 62,526 chunks
+  LC0 inventory 83/120: 6,557,224 records in 60,722 chunks
+  LC0 inventory 84/120: 6,896,303 records in 63,746 chunks
+  LC0 inventory 85/120: 6,818,250 records in 63,201 chunks
+  LC0 inventory 86/120: 6,613,159 records in 61,121 chunks
+  LC0 inventory 87/120: 6,144,692 records in 56,804 chunks
+  LC0 inventory 88/120: 6,863,545 records in 63,776 chunks
+  LC0 inventory 89/120: 6,868,968 records in 63,722 chunks
+  LC0 inventory 90/120: 95,585 records in 911 chunks
+  LC0 inventory 91/120: 6,777,124 records in 62,684 chunks
+  LC0 inventory 92/120: 6,638,731 records in 61,363 chunks
+  LC0 inventory 93/120: 6,612,245 records in 61,271 chunks
+  LC0 inventory 94/120: 6,497,900 records in 60,369 chunks
+  LC0 inventory 95/120: 7,074,779 records in 65,586 chunks
+  LC0 inventory 96/120: 7,418,733 records in 68,488 chunks
+  LC0 inventory 97/120: 7,199,682 records in 66,623 chunks
+  LC0 inventory 98/120: 6,529,280 records in 60,430 chunks
+  LC0 inventory 99/120: 4,267,977 records in 39,798 chunks
+  LC0 inventory 100/120: 3,125,489 records in 28,718 chunks
+  LC0 inventory 101/120: 4,601,327 records in 42,696 chunks
+  LC0 inventory 102/120: 5,539,959 records in 51,111 chunks
+  LC0 inventory 103/120: 5,940,409 records in 54,793 chunks
+  LC0 inventory 104/120: 4,134,515 records in 37,924 chunks
+  LC0 inventory 105/120: 2,698,112 records in 24,827 chunks
+  LC0 inventory 106/120: 2,895,377 records in 26,777 chunks
+  LC0 inventory 107/120: 3,458,904 records in 31,930 chunks
+  LC0 inventory 108/120: 3,009,023 records in 27,948 chunks
+  LC0 inventory 109/120: 3,124,191 records in 28,816 chunks
+  LC0 inventory 110/120: 3,106,133 records in 28,637 chunks
+  LC0 inventory 111/120: 3,120,568 records in 28,712 chunks
+  LC0 inventory 112/120: 3,590,341 records in 33,131 chunks
+  LC0 inventory 113/120: 3,959,176 records in 36,525 chunks
+  LC0 inventory 114/120: 3,147,882 records in 28,927 chunks
+  LC0 inventory 115/120: 3,278,979 records in 30,195 chunks
+  LC0 inventory 116/120: 3,605,808 records in 33,132 chunks
+  LC0 inventory 117/120: 3,092,013 records in 28,547 chunks
+  LC0 inventory 118/120: 3,129,539 records in 28,870 chunks
+  LC0 inventory 119/120: 3,836,122 records in 35,301 chunks
+  LC0 inventory 120/120: 4,184,917 records in 38,570 chunks
+tar files: 120
+gzip chunks: 8,408,744
+exact V6 records: 901,651,021
+compressed payload: 170.87 GiB
+uncompressed payload: 6.86 TiB
+sampled versions: {6: 12698}
+sampled input formats: {1: 12698}
+bad ISIZE members: 3
+bad sampled records: 0
+
+Disk free:
+  repo: 943.84 GiB
+  stockfish: 287.52 GiB
+  lc0: 287.52 GiB
+
+Audit report: training/data/data_audit.json
+LC0 inventory: training/data/lc0_inventory.csv
+fatal/anomalous findings: 3

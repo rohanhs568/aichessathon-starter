@@ -1,0 +1,31 @@
+RULE SEMANTICS: PASS
+starting position occurrences after one cycle: 2
+starting position occurrences after two cycles: 3
+python-chess claim after two cycles: True
+python-chess outcome: Outcome(termination=<Termination.THREEFOLD_REPETITION: 7>, winner=None)
+
+REPETITION KEY CLOCK-INDEPENDENCE: PASS
+halfmove/fullmove counters do not alter repetition identity
+
+FEN-ONLY PROTOCOL HISTORY RECONSTRUCTION: PASS
+actual plies simulated: 8
+starting position occurrences reconstructed: 3
+total actual position occurrences recorded: 9
+  pair=1 plies=2 start_occurrences=1 total_occurrences=3
+  pair=2 plies=4 start_occurrences=2 total_occurrences=5
+  pair=3 plies=6 start_occurrences=2 total_occurrences=7
+  pair=4 plies=8 start_occurrences=3 total_occurrences=9
+
+EXACT THREEFOLD POLICY: PASS
+third occurrence returns draw score 0
+EXACT TWO-OCCURRENCE NON-DRAW: PASS
+second occurrence is not incorrectly scored as threefold
+
+SEARCH-TREE FIRST-CYCLE POLICY: PASS
+second occurrence inside current search is treated as 0
+
+IMPORTANT
+---------
+Exact threefold and first-cycle scoring remain separate policies.
+Exact threefold tracking is a correctness requirement.
+First-cycle scoring is a search heuristic and needs A/B testing.

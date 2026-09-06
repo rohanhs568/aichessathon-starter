@@ -1,0 +1,23 @@
+
+======================================================================================
+MOVE-QUALITY SWEEP
+======================================================================================
+Positions: 12 | candidate clock: 3000ms | Stockfish depth: 13
+
+rank  config              mean   median    <30cp   >=75cp    >=300  SF best
+--------------------------------------------------------------------------------------
+1     blend_25           25.8    12.0    66.7%     8.3%     0.0%    33.3%
+2     blend_35           25.8    12.0    66.7%     8.3%     0.0%    33.3%
+3     blend_15           47.7    12.0    66.7%    16.7%     0.0%    41.7%
+4     search_only        49.8    12.0    66.7%    16.7%     8.3%    41.7%
+5     submitted_v1       50.5     8.5    58.3%    16.7%     0.0%    41.7%
+
+Interpretation:
+  lower mean/median centipawn loss is better;
+  <30cp is the fraction of moves close to Stockfish;
+  >=75cp and >=300cp are mistake/blunder rates;
+  SF best is exact agreement with Stockfish's top move.
+
+Use this sweep to select a candidate quickly. Then confirm the winner in paired games.
+
+Detailed CSV: sweep_move_quality.csv

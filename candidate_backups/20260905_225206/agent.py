@@ -1,4 +1,4 @@
-"""Chessathon learned-evaluation search agent, V1.6 FastKey + robust fail-low.
+"""Chessathon learned-evaluation search agent, V1 FastQ.
 
 Search:
     iterative deepening
@@ -8,13 +8,9 @@ Search:
     quiescence search
     TT / MVV-LVA / killer / history move ordering
     null-move pruning
+    late-move reductions (LMR)
     conservative frontier futility pruning
     aspiration windows
-    exact real-game threefold tracking reconstructed across protocol calls
-
-LMR is intentionally disabled in this candidate. Controlled ablations found
-that the existing shallow move-index LMR occasionally hid critical quiet
-resources and worsened tournament-clock move quality.
 
 Evaluation:
     V1 dual-perspective NNUE-style network exported to weights/v1.npz
@@ -87,19 +83,6 @@ MAX_ACTIVE_FEATURES = 36
 # Conservative pruning settings. These are intentionally simple initial
 # values, suitable for testing before any Elo tuning.
 FUTILITY_MARGIN_D1 = 160
-
-# V1.5 search/time settings. The old 50-unit aspiration window failed far too
-# often for the current evaluator's iteration-to-iteration score volatility.
-ASPIRATION_WINDOW = 160
-ASPIRATION_MAX_WINDOW = 1600
-
-# A completed fail-low is evidence that the previous iteration's PV was too
-# optimistic. Give that re-search extra time, but only once per real move and
-# never at the expense of the hard clock reserve.
-PANIC_TIME_MULTIPLIER = 2.0
-PANIC_TIME_MAX_MS = 7_000.0
-PANIC_TIME_MIN_CLOCK_MS = 5_000
-PANIC_RESERVE_MS = 1_000.0
 
 
 # ============================================================
@@ -327,36 +310,10 @@ HISTORY = {}
 
 NODES = 0
 DEADLINE = 0.0
-HARD_DEADLINE = 0.0
-
-ASP_FAIL_LOW_COUNT = 0
-ASP_FAIL_HIGH_COUNT = 0
-PANIC_EXTENSION_COUNT = 0
-
-# The tournament runner imports agent.py once and calls get_move repeatedly.
-# We therefore retain enough real-game state to reconstruct one opponent move
-# between calls and count exact repetition-relevant positions.
-_GAME_BOARD = None
-_GAME_COUNTS = {}
-_PATH_COUNTS = {}
-_NULL_SEARCH_ACTIVE = 0
 
 
 class SearchTimeout(Exception):
     pass
-
-
-def fast_board_key(board):
-    """Cheap position identity for caches.
-
-    python-chess already maintains the relevant bitboards incrementally.
-    _transposition_key() avoids rebuilding a Polyglot hash at every TT and
-    evaluator-cache lookup. Keep a public-API fallback for compatibility.
-    """
-    transposition_key = getattr(board, "_transposition_key", None)
-    if transposition_key is not None:
-        return transposition_key()
-    return chess.polyglot.zobrist_hash(board)
 
 
 # ============================================================
@@ -481,8 +438,8 @@ def evaluate(board):
     if not NN_AVAILABLE:
         return material_evaluate(board)
 
-    cache_key = fast_board_key(board)
-    cached = EVAL_CACHE.get(cache_key)
+    zobrist = chess.polyglot.zobrist_hash(board)
+    cached = EVAL_CACHE.get(zobrist)
     if cached is not None:
         return cached
 
@@ -511,7 +468,7 @@ def evaluate(board):
 
     if len(EVAL_CACHE) >= MAX_EVAL_CACHE_SIZE:
         EVAL_CACHE.clear()
-    EVAL_CACHE[cache_key] = score
+    EVAL_CACHE[zobrist] = score
 
     return score
 
@@ -522,11 +479,8 @@ def evaluate(board):
 
 
 def position_key(board):
-    # Keep the halfmove clock because the 50-move rule makes otherwise
-    # identical positions search-distinct. The expensive part was the
-    # Polyglot recomputation, not this integer.
     return (
-        fast_board_key(board),
+        chess.polyglot.zobrist_hash(board),
         board.halfmove_clock,
     )
 
@@ -560,7 +514,7 @@ def check_time(force=False):
 
 
 def choose_time_budget(time_left_ms):
-    """Conservative normal budget for the 120s + 0.5s tournament clock."""
+    """Conservative budget for the 120s + 0.5s tournament clock."""
     if time_left_ms <= 250:
         return max(5.0, 0.10 * time_left_ms)
 
@@ -577,32 +531,6 @@ def choose_time_budget(time_left_ms):
     # Always leave a reserve so a timeout check cannot flag the process.
     budget_ms = min(budget_ms, max(25.0, time_left_ms - 250.0))
     return budget_ms
-
-
-def choose_panic_budget(time_left_ms, normal_budget_ms):
-    """Maximum budget available after a completed root fail-low."""
-    if time_left_ms <= PANIC_TIME_MIN_CLOCK_MS:
-        return normal_budget_ms
-
-    safe_clock_budget = max(
-        normal_budget_ms,
-        time_left_ms - PANIC_RESERVE_MS,
-    )
-    return min(
-        normal_budget_ms * PANIC_TIME_MULTIPLIER,
-        PANIC_TIME_MAX_MS,
-        safe_clock_budget,
-    )
-
-
-def activate_fail_low_panic():
-    """Extend this move's deadline to its precomputed hard cap once."""
-    global DEADLINE
-    global PANIC_EXTENSION_COUNT
-
-    if HARD_DEADLINE > DEADLINE:
-        DEADLINE = HARD_DEADLINE
-        PANIC_EXTENSION_COUNT += 1
 
 
 # ============================================================
@@ -712,116 +640,14 @@ def has_non_pawn_material(board, colour):
     )
 
 
-def _rep_key(board):
-    """Return repetition-relevant state, excluding FEN clocks.
-
-    python-chess uses _transposition_key() internally for repetition logic.
-    Use it when available because it is bitboard-based and much cheaper than
-    constructing a board-FEN string at every search node. Keep an explicit
-    exact fallback for compatibility.
-    """
-    transposition_key = getattr(board, "_transposition_key", None)
-    if transposition_key is not None:
-        return transposition_key()
-
-    legal_ep = (
-        board.ep_square
-        if board.ep_square is not None and board.has_legal_en_passant()
-        else None
-    )
-    return (
-        board.board_fen(),
-        bool(board.turn),
-        int(board.castling_rights),
-        legal_ep,
-    )
-
-
-def _protocol_state(board):
-    """State used to match the next incoming FEN after one opponent move."""
-    return (
-        board.board_fen(),
-        bool(board.turn),
-        int(board.castling_rights),
-        board.ep_square,
-        int(board.halfmove_clock),
-        int(board.fullmove_number),
-    )
-
-
-def _same_protocol_position(board, target):
-    return _protocol_state(board) == _protocol_state(target)
-
-
-def _record_game_position(board):
-    key = _rep_key(board)
-    _GAME_COUNTS[key] = _GAME_COUNTS.get(key, 0) + 1
-
-
-def _seed_game_history(board):
-    global _GAME_BOARD
-    global _GAME_COUNTS
-
-    _GAME_BOARD = board.copy(stack=False)
-    _GAME_COUNTS = {_rep_key(_GAME_BOARD): 1}
-    return _GAME_BOARD.copy(stack=False)
-
-
-def _sync_game_board(fen):
-    """Reconstruct the one opponent move between persistent protocol calls.
-
-    After our previous call, _GAME_BOARD is the position after our played move.
-    On the next call the tournament supplies the position after exactly one
-    opponent move. If that transition cannot be reconstructed, treat the FEN
-    as a new game / independent test and restart the occurrence counts.
-    """
-    global _GAME_BOARD
-
-    target = chess.Board(fen)
-
-    if _GAME_BOARD is None:
-        return _seed_game_history(target)
-
-    if _same_protocol_position(_GAME_BOARD, target):
-        return _GAME_BOARD.copy(stack=False)
-
-    for move in list(_GAME_BOARD.legal_moves):
-        probe = _GAME_BOARD.copy(stack=False)
-        probe.push(move)
-        if not _same_protocol_position(probe, target):
-            continue
-
-        _GAME_BOARD = probe.copy(stack=False)
-        _record_game_position(_GAME_BOARD)
-        return _GAME_BOARD.copy(stack=False)
-
-    return _seed_game_history(target)
-
-
-def _is_repetition_draw(board):
-    # Null-move search is a fictitious line containing an illegal pass, so its
-    # nodes must not acquire FIDE repetition semantics from the real game.
-    if _NULL_SEARCH_ACTIVE:
-        return False
-
-    key = _rep_key(board)
-    return _GAME_COUNTS.get(key, 0) + _PATH_COUNTS.get(key, 0) >= 3
-
-
-def _rep_push(board, move):
-    board.push(move)
-    key = _rep_key(board)
-    _PATH_COUNTS[key] = _PATH_COUNTS.get(key, 0) + 1
-
-
-def _rep_pop(board):
-    key = _rep_key(board)
-    count = _PATH_COUNTS.get(key, 0)
-    if count <= 1:
-        _PATH_COUNTS.pop(key, None)
-    else:
-        _PATH_COUNTS[key] = count - 1
-    board.pop()
+def lmr_reduction(depth, move_index):
+    """Small, conservative late-move reduction in plies."""
+    reduction = 1
+    if depth >= 6 and move_index >= 6:
+        reduction = 2
+    if depth >= 9 and move_index >= 12:
+        reduction = 3
+    return min(reduction, depth - 2)
 
 
 # ============================================================
@@ -832,7 +658,7 @@ def _rep_pop(board):
 def quiescence(board, alpha, beta, ply):
     """V1 quiescence with faster tactical move generation.
 
-    Tactical semantics are intentionally the same as the submitted V1:
+    Search semantics are intentionally the same as the submitted V1:
       * if in check, search every legal evasion;
       * otherwise use stand-pat;
       * continue through captures and promotions only.
@@ -844,9 +670,6 @@ def quiescence(board, alpha, beta, ply):
 
     NODES += 1
     check_time()
-
-    if _is_repetition_draw(board):
-        return 0
 
     if board.is_check():
         moves = list(board.legal_moves)
@@ -863,11 +686,11 @@ def quiescence(board, alpha, beta, ply):
         order_move_list(board, moves, None, ply)
 
         for move in moves:
-            _rep_push(board, move)
+            board.push(move)
             try:
                 score = -quiescence(board, -beta, -alpha, ply + 1)
             finally:
-                _rep_pop(board)
+                board.pop()
 
             if score > best_score:
                 best_score = score
@@ -922,11 +745,11 @@ def quiescence(board, alpha, beta, ply):
     order_move_list(board, tactical_moves, None, ply)
 
     for move in tactical_moves:
-        _rep_push(board, move)
+        board.push(move)
         try:
             score = -quiescence(board, -beta, -alpha, ply + 1)
         finally:
-            _rep_pop(board)
+            board.pop()
 
         if score >= beta:
             return score
@@ -943,15 +766,9 @@ def quiescence(board, alpha, beta, ply):
 
 def negamax(board, depth, alpha, beta, ply, allow_null=True):
     global NODES
-    global _NULL_SEARCH_ACTIVE
 
     NODES += 1
     check_time()
-
-    # Repetition is history-dependent, so check before any TT lookup. A
-    # repetition-derived draw returns immediately and is never stored in TT.
-    if _is_repetition_draw(board):
-        return 0
 
     if depth <= 0:
         return quiescence(board, alpha, beta, ply)
@@ -1013,7 +830,6 @@ def negamax(board, depth, alpha, beta, ply, allow_null=True):
         null_depth = max(0, depth - 1 - reduction)
 
         board.push(chess.Move.null())
-        _NULL_SEARCH_ACTIVE += 1
         try:
             null_score = -negamax(
                 board,
@@ -1024,7 +840,6 @@ def negamax(board, depth, alpha, beta, ply, allow_null=True):
                 allow_null=False,
             )
         finally:
-            _NULL_SEARCH_ACTIVE -= 1
             board.pop()
 
         if null_score >= beta and null_score < MATE_THRESHOLD:
@@ -1058,7 +873,7 @@ def negamax(board, depth, alpha, beta, ply, allow_null=True):
         ):
             continue
 
-        _rep_push(board, move)
+        board.push(move)
         try:
             if searched_moves == 0:
                 score = -negamax(
@@ -1070,17 +885,49 @@ def negamax(board, depth, alpha, beta, ply, allow_null=True):
                     allow_null=True,
                 )
             else:
-                # LMR intentionally disabled. Every non-first move still gets
-                # the normal PVS zero-window probe at full nominal depth.
-                score = -negamax(
-                    board,
-                    depth - 1,
-                    -alpha - 1,
-                    -alpha,
-                    ply + 1,
-                    allow_null=True,
+                can_reduce = (
+                    depth >= 3
+                    and move_index >= 3
+                    and quiet
+                    and not in_check
+                    and not gives_check
                 )
 
+                if can_reduce:
+                    reduction = lmr_reduction(depth, move_index)
+                    reduced_depth = max(0, depth - 1 - reduction)
+                    score = -negamax(
+                        board,
+                        reduced_depth,
+                        -alpha - 1,
+                        -alpha,
+                        ply + 1,
+                        allow_null=True,
+                    )
+
+                    # A reduced move that looks interesting earns its full
+                    # depth back before it can change the principal variation.
+                    if score > alpha:
+                        score = -negamax(
+                            board,
+                            depth - 1,
+                            -alpha - 1,
+                            -alpha,
+                            ply + 1,
+                            allow_null=True,
+                        )
+                else:
+                    score = -negamax(
+                        board,
+                        depth - 1,
+                        -alpha - 1,
+                        -alpha,
+                        ply + 1,
+                        allow_null=True,
+                    )
+
+                # PVS re-search when the null-window probe improved alpha but
+                # did not already fail high.
                 if alpha < score < beta:
                     score = -negamax(
                         board,
@@ -1092,7 +939,7 @@ def negamax(board, depth, alpha, beta, ply, allow_null=True):
                     )
 
         finally:
-            _rep_pop(board)
+            board.pop()
 
         searched_moves += 1
 
@@ -1164,7 +1011,7 @@ def search_root(board, depth, alpha, beta):
         quiet = not is_capture and not is_promotion
         gives_check = board.gives_check(move)
 
-        _rep_push(board, move)
+        board.push(move)
         try:
             if searched_moves == 0:
                 score = -negamax(
@@ -1176,8 +1023,8 @@ def search_root(board, depth, alpha, beta):
                     allow_null=True,
                 )
             else:
-                # Keep root moves at full nominal depth. Internal LMR is
-                # disabled in this candidate as well.
+                # Keep root moves at full nominal depth. LMR is applied inside
+                # the tree, but root accuracy is worth the extra work.
                 score = -negamax(
                     board,
                     depth - 1,
@@ -1197,7 +1044,7 @@ def search_root(board, depth, alpha, beta):
                         allow_null=True,
                     )
         finally:
-            _rep_pop(board)
+            board.pop()
 
         searched_moves += 1
 
@@ -1231,13 +1078,10 @@ def search_root(board, depth, alpha, beta):
 
 
 def aspiration_search(board, depth, previous_score):
-    global ASP_FAIL_LOW_COUNT
-    global ASP_FAIL_HIGH_COUNT
-
     if previous_score is None or depth < 4 or abs(previous_score) >= MATE_THRESHOLD:
         return search_root(board, depth, -INF, INF)
 
-    window = ASPIRATION_WINDOW
+    window = 50
 
     while True:
         alpha = max(-INF, previous_score - window)
@@ -1246,24 +1090,14 @@ def aspiration_search(board, depth, previous_score):
         move, score = search_root(board, depth, alpha, beta)
 
         if score <= alpha:
-            # The previous iteration's PV has now been disproved at this
-            # depth. Spend the panic budget and resolve the current depth
-            # directly with one full-window root search instead of burning
-            # time through repeated low-window aspiration re-searches.
-            ASP_FAIL_LOW_COUNT += 1
-            activate_fail_low_panic()
-            return search_root(board, depth, -INF, INF)
-
-        if score >= beta:
-            # Fail-high is less dangerous: the old PV has not collapsed.
-            # Keep ordinary exponential widening for this direction.
-            ASP_FAIL_HIGH_COUNT += 1
             window *= 2
-            if window >= ASPIRATION_MAX_WINDOW:
-                return search_root(board, depth, -INF, INF)
-            continue
+        elif score >= beta:
+            window *= 2
+        else:
+            return move, score
 
-        return move, score
+        if window >= 1600:
+            return search_root(board, depth, -INF, INF)
 
 
 # ============================================================
@@ -1274,27 +1108,15 @@ def aspiration_search(board, depth, previous_score):
 def get_move(fen: str, time_left_ms: int) -> str:
     global NODES
     global DEADLINE
-    global HARD_DEADLINE
-    global ASP_FAIL_LOW_COUNT
-    global ASP_FAIL_HIGH_COUNT
-    global PANIC_EXTENSION_COUNT
-    global _GAME_BOARD
-    global _PATH_COUNTS
-    global _NULL_SEARCH_ACTIVE
 
-    board = _sync_game_board(fen)
+    board = chess.Board(fen)
     legal_moves = list(board.legal_moves)
 
     if not legal_moves:
         raise ValueError("get_move called on terminal position")
 
-    # Search-path repetition counts are local to this move. Repetition scores
-    # depend on history, so do not reuse score cutoffs from a previous real
-    # move. Iterative deepening within this move still gets the full TT benefit.
-    _PATH_COUNTS = {}
-    _NULL_SEARCH_ACTIVE = 0
-    TT.clear()
-
+    # Keep useful game-to-game-in-process TT information, but reset the
+    # ply-dependent killer table each move. History is aged instead of erased.
     KILLERS.clear()
     decay_history()
 
@@ -1304,16 +1126,8 @@ def get_move(fen: str, time_left_ms: int) -> str:
         EVAL_CACHE.clear()
 
     budget_ms = choose_time_budget(time_left_ms)
-    panic_budget_ms = choose_panic_budget(time_left_ms, budget_ms)
-
-    move_start = time.monotonic()
-    DEADLINE = move_start + budget_ms / 1000.0
-    HARD_DEADLINE = move_start + panic_budget_ms / 1000.0
-
+    DEADLINE = time.monotonic() + budget_ms / 1000.0
     NODES = 0
-    ASP_FAIL_LOW_COUNT = 0
-    ASP_FAIL_HIGH_COUNT = 0
-    PANIC_EXTENSION_COUNT = 0
 
     # Guaranteed legal emergency fallback.
     best_move = legal_moves[0]
@@ -1356,19 +1170,9 @@ def get_move(fen: str, time_left_ms: int) -> str:
     if best_move not in board.legal_moves:
         best_move = legal_moves[0]
 
-    # Persist the actual move we are about to play. On the next protocol call
-    # the incoming FEN identifies the opponent's single reply, allowing exact
-    # real-game repetition counts to continue across turns.
-    _GAME_BOARD = board.copy(stack=False)
-    _GAME_BOARD.push(best_move)
-    _record_game_position(_GAME_BOARD)
-
     print(
         f"playing={best_move.uci()} completed_depth={depth - 1} "
-        f"total_nodes={NODES} nn={NN_AVAILABLE} "
-        f"rep_count={_GAME_COUNTS.get(_rep_key(_GAME_BOARD), 0)} "
-        f"asp_low={ASP_FAIL_LOW_COUNT} asp_high={ASP_FAIL_HIGH_COUNT} "
-        f"panic={PANIC_EXTENSION_COUNT}"
+        f"total_nodes={NODES} nn={NN_AVAILABLE}"
     )
 
     return best_move.uci()

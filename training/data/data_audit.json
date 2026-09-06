@@ -1,0 +1,83 @@
+{
+  "stockfish": {
+    "shards": 402,
+    "compressed_bytes": 8339202069,
+    "compressed_human": "7.77 GiB",
+    "samples": {
+      "sampled_shards": 20,
+      "sampled_rows": 4000,
+      "bad_rows": []
+    },
+    "zstd_integrity": {
+      "files_tested": 402,
+      "failures": [],
+      "elapsed_seconds": 125.67947363853455
+    }
+  },
+  "validation": {
+    "rows": 250000,
+    "encoded_ok": 249949,
+    "encoder_rejected": 51,
+    "missing_label_rows": 0
+  },
+  "lc0": {
+    "tar_files": 120,
+    "gzip_members": 8408744,
+    "compressed_bytes": 183465361185,
+    "compressed_human": "170.87 GiB",
+    "uncompressed_bytes": 7540701672211,
+    "uncompressed_human": "6.86 TiB",
+    "records": 901651021,
+    "bad_isize_members": [
+      {
+        "tar": "/mnt/d/ChessData/lc0/test79_random/training-run2-test79-20220323-0517.tar",
+        "member": "training-run2-test79-20220323-0517/training.56187905.gz",
+        "isize": 1899810285,
+        "reason": "not divisible by 8356"
+      },
+      {
+        "tar": "/mnt/d/ChessData/lc0/test79_random/training-run2-test79-20220414-2120.tar",
+        "member": "training-run2-test79-20220414-2120/training.95509770.gz",
+        "isize": 3874223582,
+        "reason": "not divisible by 8356"
+      },
+      {
+        "tar": "/mnt/d/ChessData/lc0/test79_random/training-run2-test79-20220421-1021.tar",
+        "member": "training-run2-test79-20220421-1021/training.105267948.gz",
+        "isize": 731706868,
+        "reason": "not divisible by 8356"
+      }
+    ],
+    "bad_sample_records": [],
+    "sampled_versions": {
+      "6": 12698
+    },
+    "sampled_input_formats": {
+      "1": 12698
+    },
+    "elapsed_seconds": 4382.584599494934
+  },
+  "disk": {
+    "repo": {
+      "path": ".",
+      "total_bytes": 1081101176832,
+      "used_bytes": 12673064960,
+      "free_bytes": 1013435756544,
+      "free_human": "943.84 GiB"
+    },
+    "stockfish": {
+      "path": "/mnt/d/ChessData/lichess_train_shards",
+      "total_bytes": 1000186310656,
+      "used_bytes": 691467198464,
+      "free_bytes": 308719112192,
+      "free_human": "287.52 GiB"
+    },
+    "lc0": {
+      "path": "/mnt/d/ChessData/lc0/test79_random",
+      "total_bytes": 1000186310656,
+      "used_bytes": 691467198464,
+      "free_bytes": 308719112192,
+      "free_human": "287.52 GiB"
+    }
+  }
+}

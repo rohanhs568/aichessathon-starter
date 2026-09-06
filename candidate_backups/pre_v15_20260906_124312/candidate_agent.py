@@ -1,4 +1,4 @@
-"""Chessathon learned-evaluation search agent, V1.6 FastKey + robust fail-low.
+"""Chessathon learned-evaluation search agent, V1.5 FastKey + wide aspiration + fail-low panic.
 
 Search:
     iterative deepening
@@ -1246,24 +1246,20 @@ def aspiration_search(board, depth, previous_score):
         move, score = search_root(board, depth, alpha, beta)
 
         if score <= alpha:
-            # The previous iteration's PV has now been disproved at this
-            # depth. Spend the panic budget and resolve the current depth
-            # directly with one full-window root search instead of burning
-            # time through repeated low-window aspiration re-searches.
+            # The previous iteration's PV was materially too optimistic.
+            # Buy time for the widened re-search instead of timing out and
+            # blindly falling back to that older PV.
             ASP_FAIL_LOW_COUNT += 1
             activate_fail_low_panic()
-            return search_root(board, depth, -INF, INF)
-
-        if score >= beta:
-            # Fail-high is less dangerous: the old PV has not collapsed.
-            # Keep ordinary exponential widening for this direction.
+            window *= 2
+        elif score >= beta:
             ASP_FAIL_HIGH_COUNT += 1
             window *= 2
-            if window >= ASPIRATION_MAX_WINDOW:
-                return search_root(board, depth, -INF, INF)
-            continue
+        else:
+            return move, score
 
-        return move, score
+        if window >= ASPIRATION_MAX_WINDOW:
+            return search_root(board, depth, -INF, INF)
 
 
 # ============================================================

@@ -26,11 +26,6 @@ import chess.engine
 import chess.pgn
 
 MATE_SCORE = 100_000
-CP_CLAMP = 1_000
-
-
-def clamp_cp(value: int) -> int:
-    return max(-CP_CLAMP, min(CP_CLAMP, value))
 
 
 def numeric_score(score: chess.engine.PovScore, colour: chess.Color) -> int:
@@ -124,8 +119,7 @@ def main() -> None:
                         board,
                         chess.engine.Limit(depth=args.depth),
                     )
-                    best_score_raw = numeric_score(best_info["score"], mover)
-                    best_score = clamp_cp(best_score_raw)
+                    best_score = numeric_score(best_info["score"], mover)
                     best_move = best_info.get("pv", [None])[0]
 
                     board.push(move)
@@ -134,12 +128,8 @@ def main() -> None:
                         board,
                         chess.engine.Limit(depth=args.depth),
                     )
-                    played_score_raw = numeric_score(played_info["score"], mover)
-                    played_score = clamp_cp(played_score_raw)
+                    played_score = numeric_score(played_info["score"], mover)
 
-                    # Mate scores are synthetic sentinels, not literal CP.
-                    # Clamp each eval before differencing so one mate flip
-                    # cannot dominate ACPL.
                     cp_loss = max(0, best_score - played_score)
                     label = classify_loss(cp_loss)
 
@@ -160,8 +150,6 @@ def main() -> None:
                         "best_move": (
                             best_move.uci() if best_move is not None else ""
                         ),
-                        "best_eval_raw_cp": best_score_raw,
-                        "played_eval_raw_cp": played_score_raw,
                         "best_eval_cp": best_score,
                         "played_eval_cp": played_score,
                         "cp_loss": cp_loss,
@@ -189,8 +177,6 @@ def main() -> None:
             "phase",
             "move",
             "best_move",
-            "best_eval_raw_cp",
-            "played_eval_raw_cp",
             "best_eval_cp",
             "played_eval_cp",
             "cp_loss",
@@ -214,7 +200,7 @@ def main() -> None:
         lines.extend([
             player,
             f"  analysed moves: {moves}",
-            f"  ACPL (evals clamped to +/-{CP_CLAMP}cp): {acpl:.1f}",
+            f"  ACPL: {acpl:.1f}",
             f"  inaccuracies >=30cp: {data['inaccuracy']}",
             f"  mistakes >=75cp: {data['mistake']}",
             f"  major mistakes >=150cp: {data['major_mistake']}",
